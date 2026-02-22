@@ -13,8 +13,8 @@ Build bottom-up: establish the HA integration scaffold and validated DB access l
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Foundation** - HACS-compatible integration scaffold, Recorder DB access layer, async execution patterns, HAOS dependency validation (completed 2026-02-22)
-- [ ] **Phase 2: Pattern Detection Engine** - Daily routine detector, confidence scoring, unit-tested against static fixtures
-- [ ] **Phase 3: Coordinator Wiring + Storage** - PatternCoordinator, WebSocket API, persistent storage, panel skeleton
+- [x] **Phase 2: Pattern Detection Engine** - Daily routine detector, confidence scoring, unit-tested against static fixtures, coordinator wired (completed 2026-02-22)
+- [x] **Phase 3: Coordinator Wiring + Storage** - PatternCoordinator, WebSocket API, persistent storage, panel skeleton (completed 2026-02-22)
 - [ ] **Phase 4: Automation Creation** - AutomationBuilder, accept-to-create flow, full core user journey complete
 - [ ] **Phase 5: Review Panel + Advanced Detectors** - Full LitElement sidebar panel, presence-based detection, temporal sequence detection
 
@@ -46,19 +46,32 @@ Plans:
   2. Each detected pattern includes a confidence score with human-readable evidence (e.g. "happened 8 of last 10 mornings")
   3. DailyRoutineDetector correctly identifies a time-based routine from a 90-day fixture with 500 entities within 30 seconds on Pi 4 class hardware
   4. Analysis runs in an executor job and does not block the HA event loop
-**Plans**: TBD
+**Plans:** 2/2 plans complete
+
+Plans:
+- [x] 02-01-PLAN.md — DailyRoutineDetector with TDD: models, algorithm, test suite
+- [x] 02-02-PLAN.md — Coordinator wiring: connect detector to HA lifecycle
 
 ### Phase 3: Coordinator Wiring + Storage
 **Goal**: The pattern detection engine is wired into HA's lifecycle — scheduled analysis, on-demand scans, persistent dismissed/accepted state, and a WebSocket API with a thin panel that proves the data contract end-to-end
 **Depends on**: Phase 2
 **Requirements**: PDET-07, MGMT-01, MGMT-02, MGMT-03
+**Audit Fixes** (from v1.0 audit):
+  - MC-01: Register `entry.add_update_listener` so options flow reconfiguration updates the running coordinator
+  - MC-02: Add `int()` cast in options flow `async_step_init` to match config flow behavior
 **Success Criteria** (what must be TRUE):
   1. User can trigger a manual analysis scan from the integration and see updated results
   2. Analysis runs automatically on the configured schedule without blocking HA startup
   3. A dismissed pattern stays dismissed across HA restarts
   4. Dismissing a pattern type reduces the frequency of similar suggestions in subsequent analysis runs
   5. Stale automations (not triggered in 30+ days) are surfaced separately in the data the panel can display
-**Plans**: TBD
+  6. Changing lookback period via options flow takes effect immediately without restart (MC-01/MC-02)
+**Plans:** 3/3 plans complete
+
+Plans:
+- [x] 03-01-PLAN.md — Configurable analysis schedule + MC-01/MC-02 audit fixes
+- [x] 03-02-PLAN.md — DismissedPatternsStore + StaleAutomation model
+- [x] 03-03-PLAN.md — Coordinator wiring + WebSocket API
 
 ### Phase 4: Automation Creation
 **Goal**: A user can click accept on a suggestion and a real, working HA automation entity is created — the complete core value is delivered end-to-end
@@ -91,7 +104,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation | 3/3 | Complete   | 2026-02-22 |
-| 2. Pattern Detection Engine | 0/TBD | Not started | - |
-| 3. Coordinator Wiring + Storage | 0/TBD | Not started | - |
+| 2. Pattern Detection Engine | 2/2 | Complete    | 2026-02-22 |
+| 3. Coordinator Wiring + Storage | 3/3 | Complete    | 2026-02-22 |
 | 4. Automation Creation | 0/TBD | Not started | - |
 | 5. Review Panel + Advanced Detectors | 0/TBD | Not started | - |

@@ -9,20 +9,20 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Pattern Detection
 
-- [ ] **PDET-01**: User can trigger pattern analysis on historical Recorder DB states
-- [ ] **PDET-02**: System detects daily time-based routines (e.g. light on every morning at ~7:00)
+- [x] **PDET-01**: User can trigger pattern analysis on historical Recorder DB states
+- [x] **PDET-02**: System detects daily time-based routines (e.g. light on every morning at ~7:00)
 - [ ] **PDET-03**: System detects presence-based patterns (person arrives → devices activate)
 - [ ] **PDET-04**: System detects temporal sequences (device A on → device B shortly after)
-- [ ] **PDET-05**: Each pattern has a confidence score with evidence (e.g. "8/10 mornings")
+- [x] **PDET-05**: Each pattern has a confidence score with evidence (e.g. "8/10 mornings")
 - [x] **PDET-06**: User can configure lookback period (7/14/30/90 days)
-- [ ] **PDET-07**: User can configure analysis schedule + trigger manual scan
+- [x] **PDET-07**: User can configure analysis schedule + trigger manual scan
 - [x] **PDET-08**: Pattern analysis uses lightweight ML, runs on RPi 4 class hardware
 
 ### Suggestion Management
 
-- [ ] **MGMT-01**: User can dismiss suggestions persistently (survives restart)
-- [ ] **MGMT-02**: Dismissed patterns train future analysis (reduces similar suggestions)
-- [ ] **MGMT-03**: System detects stale automations (not fired in 30+ days)
+- [x] **MGMT-01**: User can dismiss suggestions persistently (survives restart)
+- [x] **MGMT-02**: Dismissed patterns train future analysis (reduces similar suggestions)
+- [x] **MGMT-03**: System detects stale automations (not fired in 30+ days)
 
 ### User Interface
 
@@ -72,17 +72,17 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PDET-01 | Phase 2 | Pending |
-| PDET-02 | Phase 2 | Pending |
+| PDET-01 | Phase 2 | Complete |
+| PDET-02 | Phase 2 | Complete |
 | PDET-03 | Phase 5 | Pending |
 | PDET-04 | Phase 5 | Pending |
-| PDET-05 | Phase 2 | Pending |
+| PDET-05 | Phase 2 | Complete |
 | PDET-06 | Phase 1 | Complete |
-| PDET-07 | Phase 3 | Pending |
+| PDET-07 | Phase 3 | Complete |
 | PDET-08 | Phase 1 | Complete |
-| MGMT-01 | Phase 3 | Pending |
-| MGMT-02 | Phase 3 | Pending |
-| MGMT-03 | Phase 3 | Pending |
+| MGMT-01 | Phase 3 | Complete |
+| MGMT-02 | Phase 3 | Complete |
+| MGMT-03 | Phase 3 | Complete |
 | UI-01 | Phase 5 | Pending |
 | UI-02 | Phase 4 | Pending |
 | UI-03 | Phase 5 | Pending |

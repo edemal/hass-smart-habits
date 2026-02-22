@@ -14,7 +14,10 @@ from homeassistant.helpers.selector import (
 )
 
 from .const import (
+    ANALYSIS_INTERVAL_OPTIONS,
+    CONF_ANALYSIS_INTERVAL,
     CONF_LOOKBACK_DAYS,
+    DEFAULT_ANALYSIS_INTERVAL,
     DEFAULT_LOOKBACK_DAYS,
     DOMAIN,
     LOOKBACK_OPTIONS,
@@ -68,12 +71,26 @@ class SmartHabitsOptionsFlow(OptionsFlow):
     ) -> FlowResult:
         """Handle the options init step."""
         if user_input is not None:
-            return self.async_create_entry(data=user_input)
+            # MC-02 fix: cast SelectSelector string values to int before storage
+            return self.async_create_entry(
+                data={
+                    CONF_LOOKBACK_DAYS: int(user_input[CONF_LOOKBACK_DAYS]),
+                    CONF_ANALYSIS_INTERVAL: int(user_input[CONF_ANALYSIS_INTERVAL]),
+                }
+            )
 
         current_lookback = str(
             self.config_entry.options.get(
                 CONF_LOOKBACK_DAYS,
                 self.config_entry.data.get(CONF_LOOKBACK_DAYS, DEFAULT_LOOKBACK_DAYS),
+            )
+        )
+        current_interval = str(
+            self.config_entry.options.get(
+                CONF_ANALYSIS_INTERVAL,
+                self.config_entry.data.get(
+                    CONF_ANALYSIS_INTERVAL, DEFAULT_ANALYSIS_INTERVAL
+                ),
             )
         )
 
@@ -84,6 +101,14 @@ class SmartHabitsOptionsFlow(OptionsFlow):
                 ): SelectSelector(
                     SelectSelectorConfig(
                         options=LOOKBACK_OPTIONS,
+                        mode=SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Required(
+                    CONF_ANALYSIS_INTERVAL, default=current_interval
+                ): SelectSelector(
+                    SelectSelectorConfig(
+                        options=ANALYSIS_INTERVAL_OPTIONS,
                         mode=SelectSelectorMode.DROPDOWN,
                     )
                 ),

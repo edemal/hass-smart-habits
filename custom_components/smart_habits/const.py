@@ -6,6 +6,10 @@ CONF_LOOKBACK_DAYS = "lookback_days"
 DEFAULT_LOOKBACK_DAYS = 30
 LOOKBACK_OPTIONS = ["7", "14", "30", "90"]
 
+CONF_ANALYSIS_INTERVAL = "analysis_interval"
+DEFAULT_ANALYSIS_INTERVAL = 1
+ANALYSIS_INTERVAL_OPTIONS = ["1", "3", "7"]
+
 DEFAULT_ENTITY_DOMAINS = [
     "light",
     "switch",
@@ -14,3 +18,10 @@ DEFAULT_ENTITY_DOMAINS = [
     "person",
     "device_tracker",
 ]
+
+# Pattern detection thresholds
+DEFAULT_MIN_CONFIDENCE = 0.6
+MIN_EVENTS_THRESHOLD = 5
+
+# Stale automation detection threshold (MGMT-03)
+STALE_AUTOMATION_DAYS = 30

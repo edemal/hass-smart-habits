@@ -20,12 +20,14 @@
     "step": {
       "init": {
         "title": "Smart Habits Options",
-        "description": "Adjust the lookback period used when detecting patterns.",
+        "description": "Adjust how Smart Habits analyses your history.",
         "data": {
-          "lookback_days": "Lookback period (days)"
+          "lookback_days": "Lookback period (days)",
+          "analysis_interval": "Analysis interval (days)"
         },
         "data_description": {
-          "lookback_days": "Number of days of Recorder history to use when detecting patterns."
+          "lookback_days": "Number of days of Recorder history to use when detecting patterns.",
+          "analysis_interval": "How often to automatically re-analyse Recorder history for new patterns."
         }
       }
     }

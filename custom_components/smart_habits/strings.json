@@ -1,0 +1,33 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Smart Habits",
+        "description": "Smart Habits analyses your Home Assistant history to discover your real usage patterns and suggests automations based on them. Select how many days of history to analyse.",
+        "data": {
+          "lookback_days": "Lookback period (days)"
+        },
+        "data_description": {
+          "lookback_days": "Number of days of Recorder history to use when detecting patterns."
+        }
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Only one Smart Habits instance is allowed."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Smart Habits Options",
+        "description": "Adjust the lookback period used when detecting patterns.",
+        "data": {
+          "lookback_days": "Lookback period (days)"
+        },
+        "data_description": {
+          "lookback_days": "Number of days of Recorder history to use when detecting patterns."
+        }
+      }
+    }
+  }
+}

@@ -1,464 +1,718 @@
 # Architecture Research
 
 **Domain:** Home Assistant custom integration — ML pattern mining with frontend panel
-**Researched:** 2026-02-22
-**Confidence:** MEDIUM-HIGH (official HA docs + community guides + verified patterns)
+**Researched:** 2026-02-23 (updated for v1.1 milestone)
+**Confidence:** HIGH for Python integration patterns (verified in v1.0); MEDIUM for automation creation API (undocumented endpoint); MEDIUM for panel registration (official docs but no live verification)
+
+---
 
 ## Standard Architecture
 
 ### System Overview
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│                     Home Assistant Runtime                            │
-│                                                                       │
-│  ┌─────────────────────────────────────────────────────────────────┐ │
-│  │                     Frontend Layer (Browser)                     │ │
-│  │                                                                  │ │
-│  │  ┌──────────────────────────────────────────────────────────┐   │ │
-│  │  │          auto-pattern Sidebar Panel (JS Web Component)    │   │ │
-│  │  │  - Pattern list (pending/accepted/dismissed)              │   │ │
-│  │  │  - Confidence scores + detail view                        │   │ │
-│  │  │  - Accept / Customize / Dismiss actions                   │   │ │
-│  │  │  - Settings (lookback period, threshold)                  │   │ │
-│  │  └────────────────────┬─────────────────────────────────────┘   │ │
-│  └───────────────────────┼──────────────────────────────────────────┘ │
-│                           │ WebSocket (hass.connection.sendMessagePromise)
-│  ┌────────────────────────┼──────────────────────────────────────────┐ │
-│  │                 Python Integration Layer                           │ │
-│  │                                                                    │ │
-│  │  ┌─────────────┐  ┌──────────────┐  ┌──────────────────────────┐ │ │
-│  │  │ __init__.py │  │  ws_api.py   │  │   config_flow.py         │ │ │
-│  │  │ (setup,     │  │ (WebSocket   │  │   (UI setup: lookback,   │ │ │
-│  │  │  teardown,  │  │  command     │  │    threshold, entities   │ │ │
-│  │  │  panel reg) │  │  handlers)   │  │    to include/exclude)   │ │ │
-│  │  └──────┬──────┘  └──────┬───────┘  └──────────────────────────┘ │ │
-│  │         │                │                                         │ │
-│  │  ┌──────▼────────────────▼────────────────────────────────────┐  │ │
-│  │  │                PatternCoordinator                           │  │ │
-│  │  │  (DataUpdateCoordinator subclass)                           │  │ │
-│  │  │  - Schedules periodic analysis runs                        │  │ │
-│  │  │  - Holds in-memory pattern store (pending/accepted/etc.)   │  │ │
-│  │  │  - Notifies panel via WebSocket subscription               │  │ │
-│  │  └──────────────────────┬─────────────────────────────────────┘  │ │
-│  │                          │ async_add_executor_job                  │ │
-│  │  ┌───────────────────────▼────────────────────────────────────┐  │ │
-│  │  │                 PatternAnalyzer (sync, CPU-bound)           │  │ │
-│  │  │  - TemporalSequenceDetector                                 │  │ │
-│  │  │  - DailyRoutineDetector                                     │  │ │
-│  │  │  - PresencePatternDetector                                  │  │ │
-│  │  │  - ExistingAutomationFilter                                 │  │ │
-│  │  └──────────────────────┬─────────────────────────────────────┘  │ │
-│  │                          │                                          │ │
-│  │  ┌───────────────────────▼────────────────────────────────────┐  │ │
-│  │  │                   RecorderReader                            │  │ │
-│  │  │  - Direct SQLAlchemy query to recorder DB                  │  │ │
-│  │  │  - Reads states + states_meta tables                       │  │ │
-│  │  │  - Respects configurable lookback window                   │  │ │
-│  │  └──────────────────────┬─────────────────────────────────────┘  │ │
-│  │                          │                                          │ │
-│  │  ┌───────────────────────▼────────────────────────────────────┐  │ │
-│  │  │                 AutomationBuilder                           │  │ │
-│  │  │  - Generates HA automation YAML dict from pattern          │  │ │
-│  │  │  - Posts to /api/config/automation/config/<id> (REST)      │  │ │
-│  │  │  - Reads automation registry to filter duplicates          │  │ │
-│  │  └────────────────────────────────────────────────────────────┘  │ │
-│  └────────────────────────────────────────────────────────────────────┘ │
-│                                                                           │
-│  ┌─────────────────────────────────────────────────────────────────────┐ │
-│  │                      Storage Layer                                   │ │
-│  │  ┌────────────────────┐  ┌──────────────────┐  ┌─────────────────┐ │ │
-│  │  │ Recorder DB        │  │ HA Automation     │  │ .storage/       │ │ │
-│  │  │ (SQLite/MariaDB)   │  │ Registry          │  │ auto_pattern    │ │ │
-│  │  │ states, states_meta│  │ (existing         │  │ (dismissed,     │ │ │
-│  │  │ statistics tables  │  │ automations)      │  │ accepted IDs,   │ │ │
-│  │  └────────────────────┘  └──────────────────┘  │ pattern cache)  │ │ │
-│  │                                                  └─────────────────┘ │ │
-│  └─────────────────────────────────────────────────────────────────────┘ │
-└───────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                          Home Assistant Runtime                               │
+│                                                                               │
+│  ┌──────────────────────────────────────────────────────────────────────────┐ │
+│  │                       Frontend Layer (Browser)                            │ │
+│  │                                                                            │ │
+│  │  ┌────────────────────────────────────────────────────────────────────┐   │ │
+│  │  │          Smart Habits Sidebar Panel (LitElement Web Component)      │   │ │
+│  │  │  - Pattern cards: pending / accepted / dismissed tabs              │   │ │
+│  │  │  - Confidence scores + evidence strings                            │   │ │
+│  │  │  - Accept (with optional customize) / Dismiss actions              │   │ │
+│  │  │  - Stale automation warnings                                       │   │ │
+│  │  └────────────────────────────┬───────────────────────────────────────┘   │ │
+│  └───────────────────────────────┼───────────────────────────────────────────┘ │
+│                                  │ WebSocket (hass.connection.sendMessagePromise)
+│  ┌───────────────────────────────┼───────────────────────────────────────────┐ │
+│  │                    Python Integration Layer                                │ │
+│  │                                                                            │ │
+│  │  ┌──────────────┐  ┌──────────────────┐  ┌───────────────────────────┐   │ │
+│  │  │  __init__.py │  │ websocket_api.py │  │     config_flow.py        │   │ │
+│  │  │  (setup,     │  │ (5 commands:     │  │  (config + options flow:  │   │ │
+│  │  │   teardown,  │  │  get_patterns,   │  │   lookback, interval,     │   │ │
+│  │  │   panel reg) │  │  dismiss,        │  │   threshold)              │   │ │
+│  │  │              │  │  trigger_scan,   │  └───────────────────────────┘   │ │
+│  │  │              │  │  accept_pattern, │                                  │ │
+│  │  │              │  │  get_accepted)   │                                  │ │
+│  │  └──────┬───────┘  └────────┬─────────┘                                  │ │
+│  │         │                   │                                             │ │
+│  │  ┌──────▼───────────────────▼────────────────────────────────────────┐   │ │
+│  │  │                   SmartHabitsCoordinator                           │   │ │
+│  │  │  (DataUpdateCoordinator subclass — EXISTING, extended)             │   │ │
+│  │  │  - Schedules periodic analysis runs                               │   │ │
+│  │  │  - Runs all detectors, merges results                             │   │ │
+│  │  │  - Filters dismissed patterns                                     │   │ │
+│  │  │  - Detects stale automations                                      │   │ │
+│  │  │  - NEW: tracks accepted patterns via AcceptedPatternsStore        │   │ │
+│  │  └──────────────────────────┬─────────────────────────────────────────┘   │ │
+│  │                              │ async_add_executor_job (generic executor)   │ │
+│  │  ┌───────────────────────────▼─────────────────────────────────────────┐  │ │
+│  │  │            Detector Layer (sync, CPU-bound, pure Python)             │  │ │
+│  │  │                                                                      │  │ │
+│  │  │  ┌──────────────────────┐  ┌──────────────────────────────────────┐ │  │ │
+│  │  │  │ DailyRoutineDetector │  │ TemporalSequenceDetector (NEW)       │ │  │ │
+│  │  │  │ (EXISTING)           │  │ - Sliding-window co-activation       │ │  │ │
+│  │  │  │ hour-of-day binning  │  │ - Device A on → Device B within N s  │ │  │ │
+│  │  │  │ confidence scoring   │  │ - Outputs TemporalPattern            │ │  │ │
+│  │  │  └──────────────────────┘  └──────────────────────────────────────┘ │  │ │
+│  │  │                                                                      │  │ │
+│  │  │  ┌──────────────────────────────────────────────────────────────┐   │  │ │
+│  │  │  │ PresencePatternDetector (NEW)                                 │   │  │ │
+│  │  │  │ - person/device_tracker → other entity state changes         │   │  │ │
+│  │  │  │ - Arrival/departure correlation within time window           │   │  │ │
+│  │  │  │ - Outputs PresencePattern                                     │   │  │ │
+│  │  │  └──────────────────────────────────────────────────────────────┘   │  │ │
+│  │  └──────────────────────────────────────────────────────────────────────┘  │ │
+│  │                              │                                             │ │
+│  │  ┌───────────────────────────▼─────────────────────────────────────────┐  │ │
+│  │  │                      RecorderReader (EXISTING)                       │  │ │
+│  │  │  - get_significant_states via recorder executor                     │  │ │
+│  │  │  - Domain-filtered entity selection                                 │  │ │
+│  │  └──────────────────────────────────────────────────────────────────────┘  │ │
+│  │                                                                             │ │
+│  │  ┌──────────────────────────────────────────────────────────────────────┐  │ │
+│  │  │                    AutomationCreator (NEW)                            │  │ │
+│  │  │  - Translates DetectedPattern → HA automation dict                  │  │ │
+│  │  │  - POST /api/config/automation/config/<uuid> via hass.auth session  │  │ │
+│  │  │  - Returns created entity_id for tracking                           │  │ │
+│  │  └──────────────────────────────────────────────────────────────────────┘  │ │
+│  └─────────────────────────────────────────────────────────────────────────────┘ │
+│                                                                                   │
+│  ┌─────────────────────────────────────────────────────────────────────────────┐ │
+│  │                           Storage Layer                                      │ │
+│  │  ┌───────────────────────┐  ┌──────────────────┐  ┌──────────────────────┐  │ │
+│  │  │ Recorder DB           │  │ HA Automation    │  │ .storage/            │  │ │
+│  │  │ (SQLite/MariaDB)      │  │ Registry         │  │ smart_habits.*       │  │ │
+│  │  │ states, states_meta   │  │ (existing        │  │ .dismissed (exists)  │  │ │
+│  │  │ (read-only via API)   │  │  automations)    │  │ .accepted  (NEW)     │  │ │
+│  │  └───────────────────────┘  └──────────────────┘  └──────────────────────┘  │ │
+│  └─────────────────────────────────────────────────────────────────────────────┘ │
+└───────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Component Responsibilities
 
-| Component | Responsibility | Typical Implementation |
-|-----------|----------------|------------------------|
-| `__init__.py` | Integration entry point, setup/teardown, panel registration, coordinator init | `async_setup_entry()`, `async_unload_entry()`, `panel_custom.async_register_panel()` |
-| `config_flow.py` | User config UI: lookback period, confidence threshold, entity filters | `ConfigFlow` class with `async_step_user()` |
-| `PatternCoordinator` | Periodic background orchestration, in-memory pattern store, listener notification | `DataUpdateCoordinator` subclass, `_async_update_data()` calling executor |
-| `PatternAnalyzer` | CPU-bound ML analysis: sequence, routine, presence detection | Synchronous Python class, runs in thread pool via `async_add_executor_job` |
-| `RecorderReader` | Historical state retrieval from Recorder DB | Direct SQLAlchemy queries to `states` + `states_meta` tables |
-| `AutomationBuilder` | Convert patterns to HA automation dicts, create via REST API | Generates YAML dict, POST to `/api/config/automation/config/<id>` |
-| `ws_api.py` | WebSocket command handlers: list patterns, accept, dismiss, trigger analysis | `@websocket_api.websocket_command` decorated handlers |
-| `panel/` (JS) | Sidebar web component: pattern review UI, action dispatch | LitElement web component receiving `hass` object, calls `hass.connection.sendMessagePromise` |
-| `.storage/auto_pattern` | Persistent state across restarts: dismissed IDs, accepted IDs, cached patterns | HA `Store` helper (`homeassistant.helpers.storage`) |
-| `ExistingAutomationFilter` | Check patterns against automation registry to suppress duplicates | Read `hass.states` filtered to `automation.*` domain + state attributes |
+| Component | Status | Responsibility |
+|-----------|--------|----------------|
+| `__init__.py` | MODIFY | Add panel registration in `async_setup_entry`; add `frontend`/`panel_custom` dependencies |
+| `manifest.json` | MODIFY | Add `frontend`, `panel_custom` to `after_dependencies`; bump version |
+| `coordinator.py` | MODIFY | Load `AcceptedPatternsStore` in `_async_setup`; filter accepted patterns; add detectors |
+| `pattern_detector.py` | RENAME/REFACTOR | Rename to `detectors/daily_routine.py`; extract base class |
+| `detectors/temporal.py` | NEW | `TemporalSequenceDetector` — sliding-window pair detection |
+| `detectors/presence.py` | NEW | `PresencePatternDetector` — arrival/departure correlation |
+| `automation_creator.py` | NEW | Pattern → HA automation dict; REST POST to create; entity validation |
+| `websocket_api.py` | MODIFY | Add `accept_pattern` and `get_accepted` commands |
+| `storage.py` | MODIFY | Add `AcceptedPatternsStore` (new storage key `smart_habits.accepted`) |
+| `models.py` | MODIFY | Add `TemporalPattern`, `PresencePattern`, `AcceptedPattern` dataclasses |
+| `panel/smart-habits-panel.js` | NEW | LitElement web component; pattern cards; accept/dismiss/customize actions |
+| `DismissedPatternsStore` | UNCHANGED | Existing dismissed pattern persistence |
+| `RecorderReader` | UNCHANGED | Recorder DB query layer |
+
+---
 
 ## Recommended Project Structure
 
+The v1.0 flat structure works for the existing code. The new detectors justify a `detectors/` subpackage to avoid a sprawling flat module list.
+
 ```
-custom_components/
-└── auto_pattern/
-    ├── __init__.py          # Integration setup, coordinator init, panel registration
-    ├── manifest.json        # name, domain, version, dependencies (recorder, frontend, panel_custom)
-    ├── const.py             # DOMAIN, CONF_* constants, default values
-    ├── config_flow.py       # ConfigFlow + OptionsFlow for lookback/threshold/filters
-    ├── coordinator.py       # PatternCoordinator (DataUpdateCoordinator subclass)
-    ├── analyzer/
-    │   ├── __init__.py
-    │   ├── base.py          # PatternAnalyzer abstract base class
-    │   ├── temporal.py      # TemporalSequenceDetector (Device A → B within N mins)
-    │   ├── routine.py       # DailyRoutineDetector (same state at same time daily)
-    │   ├── presence.py      # PresencePatternDetector (person arrives → devices)
-    │   └── filter.py        # ExistingAutomationFilter (dedup against HA registry)
-    ├── recorder/
-    │   ├── __init__.py
-    │   └── reader.py        # RecorderReader — SQLAlchemy queries against recorder DB
-    ├── automation/
-    │   ├── __init__.py
-    │   └── builder.py       # AutomationBuilder — pattern → HA automation dict + create
-    ├── storage.py           # Persistent store wrapper (accepted, dismissed, cache)
-    ├── ws_api.py            # WebSocket command registration and handlers
-    ├── strings.json         # UI strings for config flow
-    ├── translations/
-    │   └── en.json
-    └── panel/
-        ├── auto-pattern-panel.js    # LitElement web component (bundled)
-        └── auto-pattern-panel.css  # Optional: embedded in JS or separate
+custom_components/smart_habits/
+├── __init__.py                  # MODIFY: add panel registration
+├── manifest.json                # MODIFY: add frontend, panel_custom deps
+├── const.py                     # MODIFY: add new pattern_type constants
+├── config_flow.py               # UNCHANGED
+├── coordinator.py               # MODIFY: multi-detector, accepted store
+├── models.py                    # MODIFY: add TemporalPattern, PresencePattern, AcceptedPattern
+├── recorder_reader.py           # UNCHANGED
+├── storage.py                   # MODIFY: add AcceptedPatternsStore
+├── websocket_api.py             # MODIFY: add accept_pattern, get_accepted commands
+├── automation_creator.py        # NEW
+├── strings.json                 # UNCHANGED
+├── detectors/
+│   ├── __init__.py              # NEW: exports all detector classes
+│   ├── daily_routine.py         # MOVE from pattern_detector.py (import alias in old path)
+│   ├── temporal.py              # NEW: TemporalSequenceDetector
+│   └── presence.py              # NEW: PresencePatternDetector
+└── panel/
+    └── smart-habits-panel.js    # NEW: LitElement web component
+
+tests/
+├── conftest.py                  # UNCHANGED
+├── test_daily_routine_detector.py  # UNCHANGED
+├── test_integration.py             # MODIFY: add panel registration test
+├── test_recorder_reader.py         # UNCHANGED
+├── test_stale_automation.py        # UNCHANGED
+├── test_storage.py                 # MODIFY: add AcceptedPatternsStore tests
+├── test_websocket.py               # MODIFY: add accept_pattern, get_accepted tests
+├── test_temporal_detector.py       # NEW
+├── test_presence_detector.py       # NEW
+└── test_automation_creator.py      # NEW
 ```
 
 ### Structure Rationale
 
-- **`analyzer/`:** Separates ML algorithm logic from HA plumbing. Each detector is independently testable without HA running. `filter.py` consults live HA state.
-- **`recorder/`:** Isolates all DB access. If HA changes its Recorder schema, only this module needs updating. Reader is sync (SQLAlchemy is not async-native here); wraps in executor.
-- **`automation/`:** Isolates the unstable REST API call for automation creation. Single place to update when HA changes the endpoint.
-- **`panel/`:** Frontend assets served statically. Co-located with the integration for HACS compatibility — no separate installation step.
-- **`ws_api.py`:** All WebSocket command definitions in one file keeps protocol surface area visible and reviewable.
-- **`storage.py`:** HA's `.storage` directory is the correct place for persistent non-config data. Avoids writing to arbitrary files.
+- **`detectors/`:** Three detectors sharing the same call contract (`detect(states, lookback_days) -> list[Pattern]`) belong together. Keeps `coordinator.py` imports clean and each detector independently testable.
+- **`automation_creator.py`:** The REST API interaction is isolated here. If HA changes the endpoint, only this file needs updating.
+- **`panel/`:** Frontend assets co-located with Python integration ensures HACS installs the JS without a separate step. HA serves the file via `panel_custom`.
+- **Import alias:** `pattern_detector.py` can re-export from `detectors/daily_routine.py` to avoid breaking the existing test import path — avoids a disruptive rename across 46 tests.
+
+---
 
 ## Architectural Patterns
 
-### Pattern 1: DataUpdateCoordinator for Background Analysis
+### Pattern 1: Unified Detector Interface (New)
 
-**What:** A `DataUpdateCoordinator` subclass owns the analysis lifecycle. Entities and the WebSocket panel both subscribe to it via listeners. The coordinator schedules periodic re-analysis and triggers immediate re-analysis on demand (e.g., user changes lookback window).
+**What:** All three detectors share the same synchronous call contract. The coordinator calls them all in one executor job via a list, merging results.
 
-**When to use:** Whenever multiple consumers need the same expensive data. Here, the sidebar panel and any sensor entities all consume the same pattern list — the coordinator ensures analysis runs once.
+**When to use:** `_async_update_data` in the coordinator. Pass the same `states` dict to all detectors; each inspects only the entity types it cares about.
 
-**Trade-offs:** Coordinator runs on a schedule even when no one is watching. Good for this use case since patterns should stay fresh. Schedule interval needs tuning — too frequent wastes CPU on Pi 4; too infrequent feels stale.
-
-**Example:**
-```python
-class PatternCoordinator(DataUpdateCoordinator):
-    def __init__(self, hass, config_entry):
-        super().__init__(
-            hass,
-            _LOGGER,
-            name=DOMAIN,
-            update_interval=timedelta(hours=6),  # configurable
-        )
-        self._analyzer = PatternAnalyzer(config_entry.options)
-        self._reader = RecorderReader(hass)
-
-    async def _async_update_data(self):
-        """Fetch data — runs in coordinator's async context."""
-        raw_states = await self.hass.async_add_executor_job(
-            self._reader.fetch_states,
-            self.config_entry.options[CONF_LOOKBACK_DAYS],
-        )
-        patterns = await self.hass.async_add_executor_job(
-            self._analyzer.analyze, raw_states
-        )
-        return patterns
-```
-
-### Pattern 2: WebSocket API for Panel-Backend Communication
-
-**What:** Custom WebSocket commands expose integration data and actions to the JavaScript panel. All panel→backend calls go through typed WebSocket messages, not REST.
-
-**When to use:** Anytime the HA frontend panel needs to read or mutate integration state. This is the HA-idiomatic approach — avoids CORS issues, respects HA auth, reuses existing connection.
-
-**Trade-offs:** More setup than REST calls but much more robust. WebSocket reconnects are handled by the HA frontend automatically.
+**Trade-offs:** One executor job for all detectors (efficient — one thread context switch). Each detector must be stateless — reads `states` dict, returns `list[Pattern]`, no side effects.
 
 **Example:**
 ```python
-# ws_api.py
-@websocket_api.websocket_command({
-    vol.Required("type"): "auto_pattern/list_patterns",
-})
-@websocket_api.async_response
-async def ws_list_patterns(hass, connection, msg):
-    coordinator = hass.data[DOMAIN][connection.user.id_or_none]
-    connection.send_result(msg["id"], {
-        "patterns": [p.to_dict() for p in coordinator.data],
-    })
+# coordinator.py
+from .detectors import DailyRoutineDetector, TemporalSequenceDetector, PresencePatternDetector
 
-# Registration in __init__.py async_setup_entry:
-websocket_api.async_register_command(hass, ws_list_patterns)
+def _run_all_detectors(states: dict, lookback_days: int, min_confidence: float) -> list:
+    """Synchronous — called via hass.async_add_executor_job."""
+    detectors = [
+        DailyRoutineDetector(min_confidence=min_confidence),
+        TemporalSequenceDetector(min_confidence=min_confidence),
+        PresencePatternDetector(min_confidence=min_confidence),
+    ]
+    results = []
+    for detector in detectors:
+        results.extend(detector.detect(states, lookback_days))
+    return sorted(results, key=lambda p: p.confidence, reverse=True)
+
+# In _async_update_data:
+patterns = await self.hass.async_add_executor_job(
+    _run_all_detectors, states, self.lookback_days, self.min_confidence
+)
 ```
 
-### Pattern 3: Executor Job for CPU-Bound Analysis
+### Pattern 2: Temporal Sequence Detection Algorithm
 
-**What:** All synchronous, CPU-bound ML analysis runs via `hass.async_add_executor_job()`, which dispatches work to a thread pool without blocking the HA event loop.
+**What:** Sliding-window co-activation detection. For each entity pair (A, B), look for events where A transitions to active, followed by B transitioning to active within a configurable window (default: 5 minutes). Count such co-activations across distinct days; compute confidence as co_activation_days / total_days.
 
-**When to use:** Any synchronous code that takes more than ~100ms (SQLAlchemy queries, pattern scoring loops, data transformations).
+**When to use:** `TemporalSequenceDetector.detect()`. Only meaningful for binary-ish entities (lights, switches). Skip continuous sensors.
 
-**Trade-offs:** Thread pool has limits on Pi 4. Analysis must be genuinely stateless or use proper locking if it writes shared state. Keep individual jobs under 30s to avoid HA watchdog warnings.
+**Trade-offs:** O(n * m) for n A-events and m B-events per entity pair per day. Pair explosion risk: 100 entities = ~5000 pairs. Mitigation: only consider entity pairs that have both appeared in ACTIVE_STATES on the same calendar day before testing the within-window condition. This pre-filter dramatically reduces the candidate pair set.
 
 **Example:**
 ```python
-async def _async_update_data(self):
-    # RecorderReader.fetch_states is sync SQLAlchemy — run in executor
-    raw = await self.hass.async_add_executor_job(
-        self._reader.fetch_states, lookback_days
-    )
-    # PatternAnalyzer.analyze is CPU-bound — run in executor
-    return await self.hass.async_add_executor_job(
-        self._analyzer.analyze, raw
-    )
+# detectors/temporal.py (algorithm sketch)
+from collections import defaultdict
+
+SEQUENCE_WINDOW_SECONDS = 300  # 5 minutes, configurable
+
+def detect(self, states: dict, lookback_days: int) -> list:
+    # Build per-entity activation event lists: {entity_id: [(date, ts_float), ...]}
+    activations: dict[str, list[tuple]] = defaultdict(list)
+    for entity_id, state_list in states.items():
+        for record in state_list:
+            ts, state_val = self._extract_record(record)
+            if ts and state_val in ACTIVE_STATES:
+                activations[entity_id].append((ts.date(), ts.timestamp()))
+
+    # For each ordered pair (A, B) where A != B:
+    #   Find days where A activation is followed by B activation within window
+    entity_ids = list(activations.keys())
+    patterns = []
+    for i, entity_a in enumerate(entity_ids):
+        for entity_b in entity_ids[i+1:]:
+            # Count co-activation days for A → B and B → A independently
+            patterns.extend(self._detect_pair(
+                entity_a, activations[entity_a],
+                entity_b, activations[entity_b],
+                lookback_days,
+            ))
+    return patterns
 ```
 
-### Pattern 4: Panel Registration via panel_custom in Code
+### Pattern 3: Presence-Based Pattern Detection
 
-**What:** Integrations register sidebar panels programmatically in `async_setup_entry()` using `panel_custom.async_register_panel()`. The JS web component is served from the integration's `panel/` directory.
+**What:** Detect correlations between person/device_tracker entity arriving (transitioning to `home`) and other entities activating within a time window.
 
-**When to use:** When the panel must stay in sync with the integration version (shipped together, no separate install).
+**When to use:** `PresencePatternDetector.detect()`. Only triggered by entities whose domain is `person` or `device_tracker` and whose state transitions to `home`.
 
-**Trade-offs:** Requires `frontend` and `panel_custom` in manifest dependencies. Panel JS must be a proper custom element — any framework works as long as it exports one.
+**Trade-offs:** Presence events are sparse (typically 1-4 arrivals/day). Low total event count means low denominator — need at least MIN_EVENTS_THRESHOLD arrival events to form a pattern.
+
+**Example:**
+```python
+# detectors/presence.py (algorithm sketch)
+ARRIVAL_STATE = "home"
+PRESENCE_WINDOW_SECONDS = 300  # 5 minutes after arrival
+
+def detect(self, states: dict, lookback_days: int) -> list:
+    # Step 1: Extract arrival events for person/device_tracker entities
+    arrivals: list[tuple] = []  # (date, ts_float, person_entity_id)
+    for entity_id, state_list in states.items():
+        if entity_id.split(".")[0] not in ("person", "device_tracker"):
+            continue
+        prev_state = None
+        for record in state_list:
+            ts, state_val = self._extract_record(record)
+            if ts and prev_state != ARRIVAL_STATE and state_val == ARRIVAL_STATE:
+                arrivals.append((ts.date(), ts.timestamp(), entity_id))
+            prev_state = state_val
+
+    if len(arrivals) < MIN_EVENTS_THRESHOLD:
+        return []
+
+    # Step 2: For each non-presence entity, count activations within window of any arrival
+    patterns = []
+    for entity_id, state_list in states.items():
+        if entity_id.split(".")[0] in ("person", "device_tracker"):
+            continue
+        patterns.extend(self._detect_entity_on_arrival(
+            entity_id, state_list, arrivals, lookback_days
+        ))
+    return patterns
+```
+
+### Pattern 4: Automation Creation via HA Internal REST API
+
+**What:** Convert a `DetectedPattern` to an HA automation configuration dict and create it via `POST /api/config/automation/config/<uuid>`. Use `hass.auth` for the Bearer token — specifically the trusted internal token available during integration setup.
+
+**When to use:** `ws_accept_pattern` WebSocket handler, after optional user customization of trigger time/entities.
+
+**Trade-offs:** The `/api/config/automation/config/<id>` endpoint is NOT in HA's public API docs. It is the endpoint the HA frontend's automation editor uses internally and has been stable across HA versions since 2021, but could change without notice. MEDIUM confidence — monitor across HA releases.
+
+**Critical detail:** The integration cannot use a raw `aiohttp.ClientSession` for this call because it needs HA's auth token. Use `hass.auth.async_get_or_create_access_token()` or, better, use the HA-provided `async_get_clientsession(hass)` with a long-lived access token created via `hass.auth.async_create_long_lived_access_token()`. An even cleaner approach is to use HA's internal `homeassistant.components.automation` service calls if they expose a create action.
+
+**Example:**
+```python
+# automation_creator.py
+import uuid
+import aiohttp
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from .models import DetectedPattern
+
+AUTOMATION_CONFIG_URL = "/api/config/automation/config/{automation_id}"
+
+async def async_create_automation(
+    hass,
+    pattern: DetectedPattern,
+    access_token: str,
+) -> str | None:
+    """Create a HA automation from a detected pattern. Returns new automation entity_id or None."""
+    automation_id = str(uuid.uuid4())
+    automation_dict = _build_automation_dict(pattern, automation_id)
+
+    session = async_get_clientsession(hass)
+    url = f"http://localhost:{hass.config.api.port}{AUTOMATION_CONFIG_URL.format(automation_id=automation_id)}"
+
+    async with session.post(
+        url,
+        json=automation_dict,
+        headers={"Authorization": f"Bearer {access_token}"},
+    ) as resp:
+        if resp.status in (200, 201):
+            return f"automation.{automation_dict['alias'].lower().replace(' ', '_')}"
+        return None
+
+
+def _build_automation_dict(pattern: DetectedPattern, automation_id: str) -> dict:
+    """Convert DetectedPattern to HA automation config dict."""
+    if pattern.pattern_type == "daily_routine":
+        return {
+            "id": automation_id,
+            "alias": f"Smart Habits: {pattern.entity_id} at {pattern.peak_hour:02d}:00",
+            "description": f"Auto-generated from pattern: {pattern.evidence}",
+            "trigger": [{
+                "platform": "time",
+                "at": f"{pattern.peak_hour:02d}:00:00",
+            }],
+            "condition": [],
+            "action": [{
+                "service": "homeassistant.turn_on",
+                "target": {"entity_id": pattern.entity_id},
+            }],
+            "mode": "single",
+        }
+    # temporal_sequence and presence_based patterns use different trigger shapes
+    # (see models.py for TemporalPattern and PresencePattern fields)
+    raise NotImplementedError(f"Automation builder not implemented for {pattern.pattern_type}")
+```
+
+### Pattern 5: LitElement Sidebar Panel Registration
+
+**What:** Register a custom panel programmatically in `async_setup_entry` via `homeassistant.components.panel_custom.async_register_panel`. The panel JS file is served from `custom_components/smart_habits/panel/` via HA's static file serving.
+
+**When to use:** `async_setup_entry` in `__init__.py` after coordinator is initialized.
+
+**Trade-offs:** Requires adding `frontend` and `panel_custom` to `after_dependencies` in `manifest.json`. The panel JS must be a proper custom element — a bare `customElements.define(...)` call registering a `LitElement` class. Panel registration must be idempotent (guard against double-registration on config reload).
 
 **Example:**
 ```python
 # __init__.py
 from homeassistant.components import panel_custom
+from homeassistant.components.frontend import async_remove_panel
 
-async def async_setup_entry(hass, entry):
+PANEL_URL = "smart-habits"
+PANEL_COMPONENT_NAME = "smart-habits-panel"
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    # ... coordinator setup, websocket registration (existing) ...
+
+    # Register panel (idempotent guard)
+    hass.http.register_static_path(
+        "/smart_habits_static",
+        hass.config.path("custom_components/smart_habits/panel"),
+        cache_headers=False,
+    )
     await panel_custom.async_register_panel(
         hass,
-        webcomponent_name="auto-pattern-panel",
-        frontend_url_path="auto-pattern",
-        sidebar_title="Auto Pattern",
-        sidebar_icon="mdi:robot",
-        module_url="/auto_pattern_static/auto-pattern-panel.js",
+        webcomponent_name=PANEL_COMPONENT_NAME,
+        frontend_url_path=PANEL_URL,
+        sidebar_title="Smart Habits",
+        sidebar_icon="mdi:brain",
+        module_url=f"/smart_habits_static/{PANEL_COMPONENT_NAME}.js",
         require_admin=False,
+        config_panel_domain=DOMAIN,
     )
+    entry.async_on_unload(lambda: async_remove_panel(hass, PANEL_URL))
+    return True
 ```
+
+**Panel JS minimum structure:**
+```javascript
+// panel/smart-habits-panel.js
+import { LitElement, html, css } from "https://unpkg.com/lit@2/index.js?module";
+// IMPORTANT: In production, bundle LitElement — do not load from CDN in user installs.
+// Use a self-contained bundle (rollup/esbuild output) placed in panel/ directory.
+
+class SmartHabitsPanel extends LitElement {
+    static get properties() {
+        return { hass: { type: Object }, narrow: { type: Boolean } };
+    }
+
+    async connectedCallback() {
+        super.connectedCallback();
+        const result = await this.hass.connection.sendMessagePromise({
+            type: "smart_habits/get_patterns",
+        });
+        this._patterns = result.patterns;
+        this.requestUpdate();
+    }
+
+    render() {
+        return html`<div>${JSON.stringify(this._patterns)}</div>`;
+    }
+}
+customElements.define("smart-habits-panel", SmartHabitsPanel);
+```
+
+---
 
 ## Data Flow
 
 ### Analysis Trigger Flow
 
 ```
-HA Startup / Schedule Timer / User Action (UI)
+HA Startup / Schedule Timer / ws trigger_scan command
     ↓
-PatternCoordinator._async_update_data() [async, event loop]
+SmartHabitsCoordinator._async_update_data() [async, event loop]
     ↓
-hass.async_add_executor_job(RecorderReader.fetch_states) [thread pool]
-    ↓ returns raw state history
-hass.async_add_executor_job(PatternAnalyzer.analyze) [thread pool]
-    ↓ returns List[Pattern] with confidence scores
-ExistingAutomationFilter.filter(patterns) [checks hass.states for existing automations]
-    ↓ returns de-duplicated List[Pattern]
-Coordinator stores result → notifies all listeners
+RecorderReader.async_get_states(entity_ids, lookback_days)
+    → get_instance(hass).async_add_executor_job(get_significant_states, ...)
+    ↓ returns dict[entity_id → list[State|dict]]
+hass.async_add_executor_job(_run_all_detectors, states, lookback_days, min_confidence)
+    → DailyRoutineDetector.detect(states, lookback_days) → list[DetectedPattern]
+    → TemporalSequenceDetector.detect(states, lookback_days) → list[TemporalPattern]
+    → PresencePatternDetector.detect(states, lookback_days) → list[PresencePattern]
+    ↓ returns merged list, sorted by confidence
+Filter dismissed (existing DismissedPatternsStore)
+Filter accepted (new AcceptedPatternsStore) [do NOT re-suggest accepted patterns]
+_async_detect_stale_automations() [hass.states.async_all("automation")]
     ↓
-Panel re-renders via WebSocket subscription update
+coordinator.data = {"patterns": [...], "stale_automations": [...], "accepted_patterns": [...]}
+    ↓
+All WebSocket subscribers notified; panel re-renders
 ```
 
 ### User Accepts Pattern Flow
 
 ```
-User clicks "Accept" in Panel JS (auto-pattern-panel.js)
+User clicks "Accept" in Panel JS
     ↓
-hass.connection.sendMessagePromise({type: "auto_pattern/accept_pattern", pattern_id: "..."})
-    ↓ WebSocket message to HA backend
-ws_api.ws_accept_pattern() handler [async]
+hass.connection.sendMessagePromise({
+    type: "smart_habits/accept_pattern",
+    entity_id: "...", pattern_type: "...", peak_hour: 7,
+    customizations: { trigger_time: "07:15", action: "turn_on" }   # optional
+})
+    ↓ WebSocket message → ws_accept_pattern() handler [async]
     ↓
-AutomationBuilder.build(pattern) → generates HA automation dict
+AutomationCreator.async_create_automation(hass, pattern, access_token)
+    → Builds automation dict from pattern + customizations
+    → POST /api/config/automation/config/<uuid>
+    → Returns new automation entity_id (e.g. "automation.smart_habits_light_bedroom_0700")
+    ↓ on success:
+AcceptedPatternsStore.async_accept(entity_id, pattern_type, peak_hour, automation_entity_id)
+    → persists to .storage/smart_habits.accepted
     ↓
-POST /api/config/automation/config/<generated_uuid> with Bearer token
-    ↓ HA creates automation in automations.yaml
-storage.mark_accepted(pattern_id) → persists to .storage/auto_pattern
+coordinator.async_refresh()
+    → accepted pattern removed from suggestions list
     ↓
-coordinator.async_request_refresh() → triggers re-analysis to filter now-accepted pattern
+connection.send_result({
+    "accepted": True,
+    "automation_entity_id": "automation.smart_habits_light_bedroom_0700"
+})
     ↓
-Panel receives updated list (accepted pattern moves to "accepted" view)
+Panel moves pattern card to "Accepted" tab
+```
+
+### User Customizes Before Accepting
+
+```
+User clicks "Customize" in Panel
+    ↓
+Panel shows inline edit form (time picker, entity selector, action selector)
+User edits → clicks "Save & Accept"
+    ↓
+hass.connection.sendMessagePromise({
+    type: "smart_habits/accept_pattern",
+    ..., customizations: { trigger_time: "07:30" }  # overrides pattern defaults
+})
+    ↓ same accept flow above, customizations merged into automation dict
 ```
 
 ### User Dismisses Pattern Flow
 
 ```
-User clicks "Dismiss" in Panel JS
+User clicks "Dismiss" in Panel
     ↓
-hass.connection.sendMessagePromise({type: "auto_pattern/dismiss_pattern", pattern_id: "..."})
+hass.connection.sendMessagePromise({type: "smart_habits/dismiss_pattern", ...})
+    ↓ EXISTING ws_dismiss_pattern() handler — no changes needed
+DismissedPatternsStore.async_dismiss(...)
+coordinator.async_refresh()
     ↓
-ws_api.ws_dismiss_pattern() handler
-    ↓
-storage.mark_dismissed(pattern_id)
-    ↓
-coordinator.async_request_refresh() — OR — remove from in-memory list immediately
-    ↓
-Panel updates (dismissed pattern disappears from pending view)
+Panel removes pattern card from pending view
 ```
 
 ### State Management
 
 ```
-PatternCoordinator.data (in-memory List[Pattern])
-    ↑ written by _async_update_data on each analysis run
-    ↓ read by:
-        - ws_api handlers (on panel request)
-        - Any HA sensor entities subscribed via CoordinatorEntity
+SmartHabitsCoordinator.data (in-memory, refreshed on each analysis run)
+├── "patterns": list[DetectedPattern | TemporalPattern | PresencePattern]
+│    (filtered: dismissed and accepted removed)
+├── "stale_automations": list[StaleAutomation]
+└── "accepted_patterns": list[AcceptedPattern]   # NEW: for "Accepted" tab display
 
-.storage/auto_pattern (persistent across restarts)
-    - accepted_ids: Set[str]
-    - dismissed_ids: Set[str]
-    - last_analysis_ts: datetime
-    Read at: coordinator init
-    Written at: accept/dismiss actions
+.storage/smart_habits.dismissed  (EXISTING)
+    Set[tuple(entity_id, pattern_type, peak_hour)]
+
+.storage/smart_habits.accepted   (NEW)
+    List[{"entity_id": ..., "pattern_type": ..., "peak_hour": ...,
+           "automation_entity_id": ..., "accepted_at": ISO8601}]
 ```
 
-### Key Data Flows Summary
+---
 
-1. **Read flow (states):** Recorder DB → RecorderReader (sync/executor) → PatternAnalyzer (sync/executor) → Coordinator.data → WebSocket → Panel
-2. **Write flow (automations):** Panel → WebSocket → AutomationBuilder → HA REST API → automations.yaml
-3. **Persistence flow:** Accept/dismiss actions → `storage.py` → HA `.storage/auto_pattern` JSON
-4. **Filter flow:** Coordinator analysis → ExistingAutomationFilter → check `hass.states` automation entities → remove already-covered patterns
+## New Components Detail
 
-## Build Order (Phase Dependencies)
+### TemporalPattern Model (new `models.py` dataclass)
 
-Building bottom-up eliminates blockers. Each phase is independently testable:
-
+```python
+@dataclass
+class TemporalPattern:
+    trigger_entity_id: str   # Device A (the one that fires first)
+    response_entity_id: str  # Device B (follows within window)
+    pattern_type: str        # "temporal_sequence"
+    window_seconds: int      # Observed typical gap
+    confidence: float
+    evidence: str            # "A turned on, then B turned on within 5m on 8 of 14 days"
+    active_days: int
+    total_days: int
 ```
-Phase 1: RecorderReader
-  └── Depends on: Nothing (just SQLAlchemy + HA recorder DB schema)
-  └── Test: Query states from a test HA instance
 
-Phase 2: PatternAnalyzer (pure Python, no HA)
-  └── Depends on: RecorderReader output format
-  └── Test: Unit test with static state history fixtures
+### PresencePattern Model (new `models.py` dataclass)
 
-Phase 3: Core Integration Skeleton
-  └── Depends on: PatternAnalyzer, RecorderReader
-  └── Files: __init__.py, manifest.json, const.py, config_flow.py, coordinator.py
-  └── Test: Integration loads, config flow works, coordinator runs
-
-Phase 4: WebSocket API + Storage
-  └── Depends on: Phase 3 (coordinator with data)
-  └── Files: ws_api.py, storage.py
-  └── Test: Commands respond correctly, persistence survives restart
-
-Phase 5: AutomationBuilder + Accept flow
-  └── Depends on: Phase 4 (accept command wiring)
-  └── Files: automation/builder.py
-  └── Test: Automation created in HA, filtered from future suggestions
-
-Phase 6: Frontend Panel
-  └── Depends on: Phase 4 (WebSocket API is stable)
-  └── Files: panel/auto-pattern-panel.js
-  └── Test: Panel loads in sidebar, data displays, actions work end-to-end
+```python
+@dataclass
+class PresencePattern:
+    presence_entity_id: str  # person.alice or device_tracker.phone
+    response_entity_id: str  # light.hallway, etc.
+    pattern_type: str        # "presence_based"
+    window_seconds: int      # Observed activation gap after arrival
+    confidence: float
+    evidence: str            # "light.hallway turned on within 5m of arrival on 9 of 12 arrivals"
+    active_days: int
+    total_days: int
 ```
+
+### AcceptedPattern Model (new `models.py` dataclass)
+
+```python
+@dataclass
+class AcceptedPattern:
+    entity_id: str
+    pattern_type: str
+    peak_hour: int           # For daily_routine; -1 for non-time-based patterns
+    automation_entity_id: str
+    accepted_at: str         # ISO 8601
+```
+
+### AcceptedPatternsStore (`storage.py` addition)
+
+Same structure as `DismissedPatternsStore` but stores richer dict (includes `automation_entity_id` for the "Accepted" tab to link to the automation).
+
+Storage key: `smart_habits.accepted` (namespaced to avoid collision with existing `smart_habits.dismissed`).
+
+---
 
 ## Integration Points
 
-### External Services (HA Internal)
+### HA Internal APIs
 
-| Service | Integration Pattern | Notes |
-|---------|---------------------|-------|
-| Recorder DB (SQLite/MariaDB) | Direct SQLAlchemy query via `get_instance(hass).engine` | Sync — must use executor job. Schema changes in HA releases are a risk; pin query to stable columns (`states`, `states_meta`, `state_id`, `metadata_id`, `state`, `last_updated_ts`) |
-| HA Automation registry | Read: `hass.states.async_all("automation")` for existing automations; Write: POST `/api/config/automation/config/<id>` | The write endpoint is undocumented/internal. Stable in practice but could change across HA major versions |
-| HA WebSocket API | `websocket_api.async_register_command()` for custom commands | Well-documented, stable, preferred over REST for panel↔backend |
-| HA panel_custom | `panel_custom.async_register_panel()` in setup | Requires `frontend` + `panel_custom` in manifest.json dependencies |
-| HA Storage | `homeassistant.helpers.storage.Store` class | Official API, stable, correct place for non-config persistent data |
+| Service | Integration Pattern | Confidence | Notes |
+|---------|---------------------|------------|-------|
+| Recorder DB | `get_instance(hass).async_add_executor_job(get_significant_states, ...)` | HIGH | EXISTING — proven in v1.0 |
+| WebSocket API | `@websocket_command` + `async_register_command` | HIGH | EXISTING — 3 commands; adding 2 more |
+| helpers.storage.Store | `Store(hass, version, key)` | HIGH | EXISTING for dismissed; new key for accepted |
+| panel_custom | `panel_custom.async_register_panel(...)` | MEDIUM | NEW — documented official API; not yet implemented |
+| HA Automation REST | `POST /api/config/automation/config/<id>` | MEDIUM-LOW | NEW — undocumented endpoint; stable in practice; requires live testing |
+| hass.http.register_static_path | Static file serving for panel JS | MEDIUM | NEW — official but check for deprecation in current HA version |
 
-### Internal Boundaries
+### New WebSocket Commands
+
+| Command | Direction | Handler | Description |
+|---------|-----------|---------|-------------|
+| `smart_habits/accept_pattern` | Panel → Backend | `ws_accept_pattern` | Create HA automation from pattern; persist to AcceptedPatternsStore |
+| `smart_habits/get_accepted` | Panel → Backend | `ws_get_accepted` | Return list of accepted patterns with automation links |
+
+### Internal Module Boundaries
 
 | Boundary | Communication | Notes |
 |----------|---------------|-------|
-| PatternCoordinator ↔ PatternAnalyzer | Direct Python call via executor job | Analyzer is stateless — receives state snapshot, returns pattern list. No shared mutable state. |
-| PatternCoordinator ↔ RecorderReader | Direct Python call via executor job | Reader is instantiated with hass reference; coordinator calls it in executor |
-| ws_api.py ↔ PatternCoordinator | `hass.data[DOMAIN][entry_id].coordinator` lookup | Standard HA pattern for accessing coordinator from handlers |
-| Panel JS ↔ ws_api.py | WebSocket messages (typed by `type` field) | All messages require HA auth automatically — no separate auth needed |
-| AutomationBuilder ↔ HA REST | HTTP POST with `hass.auth` Bearer token | Runs async in event loop (aiohttp), not in executor |
-| storage.py ↔ Coordinator | Called from ws_api handlers; state read at coordinator init | `Store.async_load()` / `Store.async_save()` — both async |
+| Coordinator ↔ Detectors | Direct Python call in executor job | Single function `_run_all_detectors(states, lookback_days, min_confidence)` — stateless, no shared mutable state |
+| `ws_accept_pattern` ↔ AutomationCreator | Direct async call: `await automation_creator.async_create_automation(hass, pattern, token)` | AutomationCreator is a standalone async function, not a class |
+| `ws_accept_pattern` ↔ AcceptedPatternsStore | Direct: `await coordinator.accepted_store.async_accept(...)` | Coordinator holds the store reference; handlers access via `entries[0].runtime_data` |
+| Panel JS ↔ All WS handlers | WebSocket messages typed by `type` field | HA auth is enforced automatically for all WS connections |
+| AutomationCreator ↔ HA REST | `aiohttp` via `async_get_clientsession(hass)` with long-lived or access token | Async HTTP — runs on event loop, NOT in executor |
+
+---
+
+## Build Order (Phase Dependencies)
+
+Build bottom-up: each layer is independently testable before wiring the next.
+
+```
+Phase 1: TemporalSequenceDetector
+  └── Pure Python, no HA dependencies
+  └── Input: same dict[entity_id → list[State|dict]] as DailyRoutineDetector
+  └── Output: list[TemporalPattern]
+  └── Test: unit tests with static state history fixtures (same pattern as test_daily_routine_detector.py)
+  └── No coordinator changes yet
+
+Phase 2: PresencePatternDetector
+  └── Same contract as Phase 1
+  └── Depends on: person/device_tracker state records (already in RecorderReader domain filter)
+  └── Test: unit tests — mock arrivals + subsequent activations
+
+Phase 3: Coordinator Multi-Detector Wiring
+  └── Depends on: Phase 1 + 2 (detectors exist)
+  └── Changes: coordinator._async_update_data runs all detectors via single executor job
+  └── Changes: coordinator._async_setup loads AcceptedPatternsStore
+  └── Changes: coordinator.data gains "accepted_patterns" key
+  └── Test: integration test — scan returns mixed pattern types; accepted patterns filtered
+
+Phase 4: AutomationCreator + accept_pattern WS command
+  └── Depends on: Phase 3 (coordinator has accepted store)
+  └── Files: automation_creator.py (new), websocket_api.py (add 2 commands)
+  └── Risk: REST endpoint needs live HA testing — verify before building panel
+  └── Test: unit test builder dict generation; integration test with mocked HTTP call
+
+Phase 5: Sidebar Panel (LitElement)
+  └── Depends on: Phase 4 (all WS commands stable)
+  └── Files: panel/smart-habits-panel.js (new), __init__.py + manifest.json (modified)
+  └── Test: panel loads, connects WS, renders patterns, accept/dismiss actions work
+```
+
+**Why this order:**
+- Detectors (phases 1-2) are pure Python and have no HA lifecycle coupling — fastest to build and test.
+- Coordinator wiring (phase 3) is needed before any WS command can return mixed pattern types.
+- AutomationCreator (phase 4) is isolated from the panel — the REST endpoint risk must be resolved before building any UI that depends on it. Verify accept flow with DevTools WS debugger before writing panel JS.
+- Panel (phase 5) is last because it depends on all backend commands being stable. Frontend changes are the slowest to test and iterate on.
+
+---
 
 ## Anti-Patterns
 
-### Anti-Pattern 1: Blocking the Event Loop with SQLAlchemy
+### Anti-Pattern 1: Adding All Detectors to One File
 
-**What people do:** Call `session.query(...)` directly inside `async def` functions without using an executor.
+**What people do:** Extend `pattern_detector.py` with all three detectors in one 600-line file.
 
-**Why it's wrong:** SQLAlchemy's sync queries block the entire HA event loop. On a Pi 4, a 30-day state history query can take 2-10 seconds, during which HA cannot process any other events (automations, state changes, API calls).
+**Why it's wrong:** Makes each detector harder to test in isolation. A failure in temporal detection breaks the entire module import. Merge conflicts when working on different detectors.
 
-**Do this instead:**
-```python
-# WRONG
-async def _async_update_data(self):
-    states = self.reader.session.query(States).all()  # blocks event loop!
+**Do this instead:** One file per detector in `detectors/`. Each detector is a class with `detect(states, lookback_days) -> list` — independently importable and testable.
 
-# CORRECT
-async def _async_update_data(self):
-    states = await self.hass.async_add_executor_job(self.reader.fetch_states)
-```
+### Anti-Pattern 2: Running Each Detector in a Separate Executor Job
 
-### Anti-Pattern 2: Storing Patterns in Config Entry Data
+**What people do:** Call `async_add_executor_job` three times — once per detector — and `asyncio.gather` the results.
 
-**What people do:** Write pattern results back into `config_entry.data` or `config_entry.options` for persistence.
+**Why it's wrong:** Each executor job acquires the GIL independently. Three jobs for pure-Python CPU work provides no parallelism (GIL). Adds three thread switches and three result futures for no gain.
 
-**Why it's wrong:** Config entry data is for user configuration (lookback period, threshold, entity filters), not for runtime results. Storing thousands of pattern records there pollutes HA's config storage and confuses the options flow.
+**Do this instead:** One executor job that calls all detectors sequentially. `_run_all_detectors(states, lookback_days, min_confidence)` — single function, single thread switch, merged output list.
 
-**Do this instead:** Use `homeassistant.helpers.storage.Store` (writes to `.storage/auto_pattern`). Keep coordinator.data as the in-memory working set; persist only accepted/dismissed IDs.
+### Anti-Pattern 3: Using hass.auth.async_create_long_lived_access_token in the WS Handler
 
-### Anti-Pattern 3: Querying States via `hass.states` for History
+**What people do:** Generate a new long-lived access token every time a pattern is accepted, to authenticate the automation creation REST call.
 
-**What people do:** Use `hass.states.get("sensor.foo")` to get historical data, or iterate `hass.states.async_all()` to build a history.
+**Why it's wrong:** Long-lived tokens persist in HA's auth store indefinitely. Creating one per accept action leaks tokens and pollutes the user's auth list.
 
-**Why it's wrong:** `hass.states` only holds the *current* state of each entity, not history. Using it for pattern mining returns one data point per entity — useless for temporal analysis.
+**Do this instead:** Use the short-lived connection token from the WebSocket session context (`connection.refresh_token_id`) or use HA's internal service call mechanism if available. Alternatively, create ONE long-lived token at integration setup time and store it (not ideal). The cleanest path: call HA's `automation` integration service directly via `hass.services.async_call("automation", "reload")` after writing config — investigate whether `homeassistant.components.automation` exposes a Python-callable create path.
 
-**Do this instead:** Query the Recorder DB directly (`states` table has the full history) or use `homeassistant.components.recorder.history.get_significant_states()` for the official history API.
+### Anti-Pattern 4: Inlining Automation Building Logic in the WS Handler
 
-### Anti-Pattern 4: Using Panel Config YAML Instead of Programmatic Registration
+**What people do:** Build the automation dict inline inside `ws_accept_pattern`.
 
-**What people do:** Document that users must add `panel_custom:` entries to their `configuration.yaml` to see the integration's panel.
+**Why it's wrong:** The endpoint is the riskiest part of the system. Isolating it in `AutomationCreator` means it can be tested without WebSocket scaffolding and updated without touching the WS layer.
 
-**Why it's wrong:** Creates a two-step install process that HACS users don't expect. The panel can and should be registered programmatically in `async_setup_entry()` so it appears automatically on integration install.
+**Do this instead:** `AutomationCreator` is a separate module with pure functions: `build_automation_dict(pattern) -> dict` (synchronous, testable without HA) and `async_create_automation(hass, pattern) -> str | None` (async, wraps the HTTP call).
 
-**Do this instead:** Call `panel_custom.async_register_panel()` in setup; call `homeassistant.components.frontend.async_remove_panel()` in unload.
+### Anti-Pattern 5: Loading LitElement from CDN in the Panel JS
 
-### Anti-Pattern 5: Running Analysis on Every State Change
+**What people do:** `import { LitElement } from "https://unpkg.com/lit@2/index.js?module"` in the panel JS file.
 
-**What people do:** Subscribe to `EVENT_STATE_CHANGED` and re-run full pattern analysis on every device state change event.
+**Why it's wrong:** CDN imports break on HA instances without internet access (common). Violates HA's offline-first design. Breaks on custom DNS configurations.
 
-**Why it's wrong:** A busy HA instance fires hundreds of state changes per minute. Running ML analysis on each one will saturate the Pi 4 CPU and cause HA to become unresponsive.
+**Do this instead:** Bundle LitElement into the panel JS using rollup or esbuild. The resulting `smart-habits-panel.js` is a single self-contained file. HA ships LitElement itself — check whether `haVersion >= 2023.x` exposes LitElement via HA's own module system (`/frontend_latest/...`) before adding a local copy.
 
-**Do this instead:** Use `DataUpdateCoordinator` with a fixed interval (e.g., every 6 hours) plus an on-demand trigger from the panel UI. Analysis is inherently a batch operation.
+---
 
 ## Scaling Considerations
 
-This is a single-instance Home Assistant integration. "Scaling" here means performing well across a range of HA instance sizes.
+This is a single-instance HA integration. Scale here means performance across different HA instance sizes.
 
-| Scale | Architecture Adjustments |
-|-------|--------------------------|
-| Small HA (< 20 entities, 7 day lookback) | Default settings work. Analysis completes in seconds. Update interval can be shorter (hourly). |
-| Medium HA (20-100 entities, 30 day lookback) | May need 30-60s for analysis on Pi 4. Update interval should be 6-12 hours. Cap entities analyzed or allow entity filter config. |
-| Large HA (100+ entities, 90 day lookback) | Risk of OOM or timeout on Pi 4. Must paginate or chunk DB queries. Consider analyzing entity subsets. Hard cap on state rows loaded (e.g., max 500K rows). |
+| Scale | Consideration |
+|-------|---------------|
+| Small HA (< 20 entities, 7 day lookback) | All three detectors finish in < 1 second. No bottleneck. |
+| Medium HA (20-100 entities, 30 day lookback) | Temporal detector has O(n²) pair complexity: 100 entities = ~5000 pairs. Still fast with pre-filter (only pairs co-active on same calendar day). 2-10 seconds on Pi 4. |
+| Large HA (100+ entities, 90 day lookback) | Temporal detector may need pair count cap. Presence detector is cheap (sparse events). Add entity pair cap (e.g., top 50 by co-occurrence frequency). |
 
 ### Scaling Priorities
 
-1. **First bottleneck:** DB query time and memory for large state history. Mitigate with: configurable lookback window (shorter = faster), entity inclusion filter (analyze only selected entity types), SQL LIMIT on rows fetched.
+1. **First bottleneck:** Temporal detector pair explosion. The pre-filter (only test pairs co-active on same day) cuts 80-90% of pairs. If still slow, add a hard cap on max entity pairs evaluated.
+2. **Second bottleneck:** Memory for state history. `get_significant_states` with `minimal_response=True, no_attributes=True` is already optimized. If large instances hit memory pressure, chunk entity queries (e.g., 50 entities at a time) and merge results.
 
-2. **Second bottleneck:** Pattern scoring algorithm complexity. Mitigate with: vectorized operations (numpy arrays instead of nested loops), early termination when confidence threshold met.
+---
 
 ## Sources
 
-- [HA Integration Architecture Overview](https://developers.home-assistant.io/docs/architecture_components/) — Official docs (MEDIUM confidence — accessed via search result)
-- [DataUpdateCoordinator Pattern](https://aarongodfrey.dev/home%20automation/use-coordinatorentity-with-the-dataupdatecoordinator/) — Verified against HA developer docs (MEDIUM confidence)
-- [Writing a HA Integration — Jon Seager](https://jnsgr.uk/2024/10/writing-a-home-assistant-integration/) — Published Oct 2024, comprehensive walkthrough (MEDIUM confidence)
-- [Extending the WebSocket API](https://developers.home-assistant.io/docs/frontend/extending/websocket-api/) — Official developer docs (HIGH confidence)
-- [Creating Custom Panels](https://developers.home-assistant.io/docs/frontend/custom-ui/creating-custom-panels/) — Official developer docs (HIGH confidence)
-- [Adding a Sidebar Panel to an Integration](https://community.home-assistant.io/t/how-to-add-a-sidebar-panel-to-a-home-assistant-integration/981585) — Community guide (MEDIUM confidence)
-- [Recorder and Statistics — DeepWiki](https://deepwiki.com/home-assistant/core/3.1-recorder-and-statistics) — Derived from HA source (MEDIUM confidence)
-- [HA Recorder Database Schema](https://smarthomescene.com/blog/understanding-home-assistants-database-and-statistics-model/) — Third-party analysis (LOW confidence — verify schema columns against current HA source)
-- [async_add_executor_job Pattern](https://developers.home-assistant.io/docs/asyncio_working_with_async/) — Official docs (HIGH confidence)
-- [Automation REST API — undocumented](https://community.home-assistant.io/t/rest-api-docs-for-automations/119997) — Community-confirmed, intentionally unstable (LOW confidence — needs monitoring across HA versions)
-- [integration_blueprint (GitHub)](https://github.com/jpawlowski/hacs.integration_blueprint) — Modern blueprint for 2025.7+ (MEDIUM confidence)
+- [HA Developer Docs: Extending the WebSocket API](https://developers.home-assistant.io/docs/frontend/extending/websocket-api/) — HIGH confidence
+- [HA Developer Docs: Creating Custom Panels](https://developers.home-assistant.io/docs/frontend/custom-ui/creating-custom-panels/) — HIGH confidence
+- [HA Developer Docs: panel_custom integration](https://www.home-assistant.io/integrations/panel_custom/) — HIGH confidence
+- [HA Developer Docs: Fetching data / DataUpdateCoordinator](https://developers.home-assistant.io/docs/integration_fetching_data/) — HIGH confidence
+- [HA Community: Automation REST API (undocumented)](https://community.home-assistant.io/t/rest-api-docs-for-automations/119997) — MEDIUM confidence (endpoint confirmed by community but not officially documented)
+- [HA Community: Adding sidebar panel to integration](https://community.home-assistant.io/t/how-to-add-a-sidebar-panel-to-a-home-assistant-integration/981585) — MEDIUM confidence
+- [HA helpers/storage.py source](https://github.com/home-assistant/core/blob/dev/homeassistant/helpers/storage.py) — HIGH confidence (existing use verified in v1.0)
+- v1.0 phase research (`01-RESEARCH.md`, `3-RESEARCH.md`) — HIGH confidence (patterns verified and implemented)
 
 ---
-*Architecture research for: Home Assistant custom integration — ML pattern mining with sidebar panel*
-*Researched: 2026-02-22*
+
+*Architecture research for: Home Assistant custom integration — v1.1 automation creation, sidebar panel, temporal + presence detectors*
+*Researched: 2026-02-23*

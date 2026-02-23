@@ -1,246 +1,205 @@
 # Project Research Summary
 
-**Project:** auto-pattern — Home Assistant ML Pattern Mining & Automation Suggestion Integration
-**Domain:** Home Assistant custom integration — behavioral pattern mining with local ML
-**Researched:** 2026-02-22
+**Project:** Smart Habits — Home Assistant Custom Integration (v1.1)
+**Domain:** Home Assistant custom integration — behavioral pattern mining, automation creation, LitElement sidebar panel
+**Researched:** 2026-02-23
 **Confidence:** MEDIUM-HIGH
 
 ## Executive Summary
 
-auto-pattern is a Home Assistant custom integration that mines behavioral patterns from historical device state data and surfaces actionable automation suggestions through a sidebar panel UI. The research is clear on how to build this correctly: the integration must follow the standard HA custom component structure (`custom_components/auto_pattern/`), use `DataUpdateCoordinator` for background analysis orchestration, query the Recorder DB exclusively via executor jobs (never from async context), and use lightweight scikit-learn or pure-Python statistical algorithms sized for Raspberry Pi 4 class hardware. The frontend panel is a LitElement web component registered programmatically on integration setup, communicating with the backend via custom WebSocket commands.
+Smart Habits v1.1 extends a working v1.0 integration (daily routine detection, RecorderReader, coordinator, dismiss storage, WebSocket API) with three new pattern detector types, one-click automation creation, and a dedicated sidebar panel. The v1.0 architecture is well-validated and acts as a stable foundation — all new work builds on proven patterns without replacing them. The recommended approach is bottom-up: write the two new pure-Python detectors first (they have zero HA lifecycle coupling), wire them into the coordinator, then tackle automation creation via HA's internal file-write mechanism, and finally build the LitElement panel that ties everything together in a user-facing UI.
 
-The recommended approach is to build bottom-up: establish the DB query layer and async execution patterns first, then layer pattern detection, automation creation, and the UI on top. Each layer is independently testable before the next is added. The biggest competitive gaps this integration fills are genuine one-click automation creation (competitors produce YAML to paste), deduplication against existing automations, and presence/sequence-based pattern detection which no current community tool does.
+The highest-risk element is automation creation. The STACK.md research resolves the mechanism decision: use Option A (File Write + `automation.reload`) — the same mechanism HA's own UI uses. This requires writing a valid automation YAML dict to `automations.yaml` and calling `hass.services.async_call("automation", "reload")`. Automations created this way persist across restarts and are editable in HA's automation editor afterward. The risk is manageable with three safeguards: verify the `automations.yaml` path is writable at setup time, use `asyncio.Lock` to serialize concurrent writes, and verify the created automation actually appears in HA state after the reload. Option B (undocumented REST endpoint `POST /api/config/automation/config/<id>`) is documented as a fallback only — it is community-verified stable but officially undocumented and subject to change.
 
-The key risks are clustered around two areas: environment constraints (scikit-learn may not install on HAOS's musl-Linux environment — must validate in Phase 1 or fall back to pure-Python algorithms) and the undocumented automation creation API (POST `/api/config/automation/config/<id>` is the correct endpoint but is not officially documented and is subject to change). Both risks are manageable with early validation and isolation of the unstable surface area behind a single `AutomationBuilder` component.
-
----
+The panel is the only user-facing surface and its quality directly determines perceived product value. Using Lit 3.x bundled via Vite into a single self-contained JS file is the right approach — it matches HA's own frontend stack, produces a ~25-40KB gzip bundle with no external CDN dependencies, and the `panel_custom.async_register_panel` registration API is stable and well-documented. The two new detectors (temporal sequence and presence-based) both use pure Python stdlib — no new dependencies added — and operate on the same state history dict already returned by `RecorderReader`. Performance on Raspberry Pi 4 is the primary scaling concern: the temporal sequence detector must use a sliding deque algorithm (O(N×W)), not naive nested loops (O(n²)), which would time out on real installs with more than 20 entities.
 
 ## Key Findings
 
 ### Recommended Stack
 
-The integration runtime is Python 3.13+ (required by HA 2025.2+), structured as a standard HA custom component with `DataUpdateCoordinator` for background scheduling. ML analysis uses scikit-learn 1.6+ (OPTICS, MiniBatchKMeans) and NumPy for windowed aggregation — **with the critical caveat that these packages must be validated against HAOS's musl-Linux environment before committing to them**. If they fail to install on HAOS, the fallback is pure-Python frequency counting with `statistics` and `collections`. The frontend is a LitElement 3.x web component bundled with Vite + Rollup, served statically and registered programmatically via `panel_custom.async_register_panel()`. Recorder DB access always uses `get_instance(hass).async_add_executor_job()` wrapping synchronous SQLAlchemy calls — the `history_stats` integration in HA core is the canonical model.
+The v1.0 stack (Python 3.14, DataUpdateCoordinator, RecorderReader, helpers.storage.Store, WebSocket API, zero external deps) is unchanged. All v1.1 additions are either HA built-ins or compile-time-only frontend tooling.
 
 **Core technologies:**
-- Python 3.13+ async custom component: HA 2025.2+ runtime requirement, all code must be async-compatible
-- DataUpdateCoordinator: background scheduling, subscriber fan-out, avoids reinventing async task management
-- scikit-learn 1.6+ / pure-Python fallback: OPTICS and MiniBatchKMeans for clustering; fallback if HAOS install fails
-- NumPy 1.26+: windowed time-series aggregation; lighter than pandas for pure numeric data
-- LitElement 3.x (Vite-bundled): matches HA's own frontend framework; no CDN imports (documented breakage)
-- WebSocket API (`@websocket_api.websocket_command`): panel-to-backend communication; HA-idiomatic, auth-aware
-- HA Storage (`homeassistant.helpers.storage.Store`): persistence for dismissed/accepted IDs
+- `panel_custom.async_register_panel` + `StaticPathConfig`: Sidebar panel registration — HA's canonical mechanism, stable since 2023, must run in `async_setup_entry` (not `configuration.yaml`); requires HA 2024.11+ for `StaticPathConfig`
+- Lit 3.x (bundled via Vite): LitElement web component for the panel — matches HA's own frontend stack; bundle into single `panel.js` via Vite; do NOT load from CDN or assume HA exposes Lit at a stable module path (~25-40KB gzip, fully self-contained)
+- Vite 5.x + TypeScript 5.x: Build tooling for the panel JS — build-time only, no runtime role; Node 20 LTS; output to `custom_components/smart_habits/frontend/panel.js`
+- `collections.deque` + `itertools` (stdlib): Temporal sequence detector sliding-window — zero new dependencies, mandatory O(N×W) algorithm
+- `hass.states.async_all("person")`: Presence detection data source — prefer `person.*` over `device_tracker.*`; `person` aggregates multiple trackers with debouncing, reducing flap noise
+- File Write + `automation.reload` (Option A): Automation creation — same mechanism as HA UI; requires `asyncio.Lock` for concurrent writes and a runtime check that `automations.yaml` is writable
 
-**Do not use:** TensorFlow, PyTorch, DBSCAN at scale, CDN-imported Lit, direct `automations.yaml` file writes, `hass.async_add_job` (removed HA 2025.4).
+**Critical constraints:**
+- `StaticPathConfig` requires HA 2024.11+ (older `register_static_path` still works but is deprecated — declare minimum HA version in `manifest.json`)
+- Lit 3.x must be bundled — HA uses Lit internally but does not expose it at a stable public path for third-party use
+- `embed_iframe=False` is mandatory for Lit panels — iframe sandboxing blocks `hass` property injection
+- Zero external Python dependencies — maintained from v1.0; HAOS musl-Linux wheel incompatibility rules out scikit-learn, numpy, pandas
 
 ### Expected Features
 
-The feature research identifies a clear MVP: a working pattern detection and review cycle that proves the core value proposition. All P1 features form an interdependent chain — Recorder query layer → pattern detection → confidence scoring → suggestion storage → review panel → accept to create automation. Breaking any link in this chain means the product cannot demonstrate its core value.
+**Must have (table stakes — v1.1 is incomplete without these):**
+- One-click accept → create real HA automation (not YAML export, not redirect to Settings)
+- Accepted patterns removed from suggestion list immediately and permanently
+- Temporal sequence detection — Device A on → Device B on within configurable window
+- Presence-based detection — person arrives → devices activate within window
+- Sidebar panel with pattern cards, confidence scores, accept/dismiss/customize actions
+- Human-readable automation preview before accepting ("Turns on kitchen lights at 07:05 every weekday")
+- Customize-before-accept — panel form lets user adjust trigger time, entities, window
+- Stale automation list displayed in panel (data already exists in coordinator from v1.0)
 
-**Must have (table stakes):**
-- Recorder DB query layer — handles SQLite + MariaDB; respects configurable lookback window
-- Time-based routine detection — frequency + time-window bucketing; the most universal pattern class
-- Confidence score per suggestion — frequency × consistency; configurable minimum threshold
-- Existing automation deduplication — suppresses suggestions already automated
-- User and domain filtering — exclude accounts and entity domains from analysis
-- Persistent dismiss — dismissed suggestions survive HA restart
-- Sidebar review panel — browse suggestions, trigger scan, manage accepted/dismissed state
-- Accept → real automation creation — one click creates a live HA automation (not YAML to paste)
+**Should have (differentiators — add to v1.1 if feasible):**
+- Pattern category grouping in panel — "Morning Routines," "Arrival Sequences," "Device Chains" (panel-layer only, no backend changes)
+- Configurable sequence detection window (5 min vs. 15 min per user preference — one parameter on `TemporalSequenceDetector`)
+- Presence detection with multiple downstream entities per arrival event
 
-**Should have (competitive differentiators, v1.x):**
-- Presence-based pattern detection — person arrives → devices activate; no competitor does this
-- Temporal sequence detection (A→B) — TV on → lights dim; the most sophisticated and trusted pattern class
-- Stale automation detection — surface unused automations; independent of pattern engine, can ship early
-- Pattern preview in human language — "Turns on kitchen lights every weekday at 07:05" before accepting
-- Customize before accepting — edit time, threshold, entities before creation
+**Defer to v2+:**
+- Multi-entity routine clustering ("morning routine" as one block)
+- Learn from dismissals (implicit training / fingerprint weighting)
+- Lovelace card variant of the panel (duplicates sidebar lifecycle, no additive UX value)
+- Opt-in notification push when new patterns found
+- State correlation patterns (temperature → heater) — different data model needed
 
-**Defer (v2+):**
-- Multi-entity routine clustering — "morning routine" as a single block; very high complexity
-- Learn from dismissals (implicit training) — defer until dismiss volume is measurable
-- Pattern category grouping — cosmetic; only valuable at high suggestion volume
-- State correlation patterns (temperature → heater) — different data model needed; out of v1 scope
+**Anti-features to avoid:**
+- Auto-accept all high-confidence patterns (wrong automations fire at 3am; users lose trust immediately)
+- YAML export / paste workflow (defeats the value proposition; competitors already do this poorly)
+- Real-time pattern update on every state change (fires hundreds of times per minute; Pi 4 cannot sustain)
+- Registering the panel from `configuration.yaml` (breaks integration lifecycle; panel persists after integration removal)
 
 ### Architecture Approach
 
-The integration uses a layered, bottom-up architecture with clear separation between HA plumbing and ML logic. The `PatternCoordinator` (DataUpdateCoordinator subclass) owns the analysis lifecycle and in-memory pattern store. All CPU-bound work (`RecorderReader` SQL queries, `PatternAnalyzer` scoring loops) runs in executor jobs off the event loop. The `AutomationBuilder` isolates the unstable REST API call for automation creation. The frontend JS web component communicates exclusively via typed WebSocket messages, never REST, to respect HA auth and avoid CORS issues. Persistence uses HA's `.storage/auto_pattern` Store for dismissed/accepted IDs — not config entry data.
+The architecture is a layered Python integration with a frontend JS component communicating over WebSocket. All CPU-bound detection runs in a single executor job (`hass.async_add_executor_job`) using a unified detector interface — one thread context switch for all three detectors, no GIL-contention waste from separate jobs. The `detectors/` subpackage isolates each detector for independent testing. `automation_creator.py` is a standalone module wrapping the file-write + reload mechanism, isolating the highest-risk component so it can be tested and updated without touching WebSocket handlers. The panel JS is a self-contained LitElement web component registered programmatically in `async_setup_entry`.
 
-**Major components:**
-1. `RecorderReader` — synchronous SQLAlchemy queries against `states` + `states_meta` tables; runs in executor
-2. `PatternAnalyzer` (with sub-detectors: `DailyRoutineDetector`, `TemporalSequenceDetector`, `PresencePatternDetector`, `ExistingAutomationFilter`) — pure Python, stateless, CPU-bound, runs in executor
-3. `PatternCoordinator` — DataUpdateCoordinator subclass; schedules analysis, holds pattern store, notifies panel
-4. `AutomationBuilder` — converts pattern dicts to HA automation YAML; POSTs via internal REST API
-5. `ws_api.py` — all WebSocket command handlers; single file for visibility of protocol surface area
-6. `panel/auto-pattern-panel.js` — LitElement web component; Vite-bundled; registered programmatically in setup
-7. `storage.py` — HA Store wrapper for persistent accepted/dismissed IDs
-8. `config_flow.py` — ConfigFlow + OptionsFlow for lookback period, threshold, entity filters
+**Major components (status):**
+1. `detectors/temporal.py` (NEW) — `TemporalSequenceDetector`: sliding-window co-activation, O(N×W) algorithm, pure stdlib
+2. `detectors/presence.py` (NEW) — `PresencePatternDetector`: arrival/departure correlation with mandatory dwell-time filter; prefers `person.*` domain
+3. `automation_creator.py` (NEW) — translates `DetectedPattern` to HA automation dict; file write + `automation.reload`; `asyncio.Lock`; post-creation verification via `hass.states.async_get`
+4. `coordinator.py` (MODIFY) — runs all three detectors in single executor job; loads `AcceptedPatternsStore`; filters both dismissed and accepted patterns
+5. `websocket_api.py` (MODIFY) — adds `accept_pattern` and `get_accepted` commands with idempotency guard (`hass.data` flag prevents double-registration on config entry reload)
+6. `storage.py` (MODIFY) — adds `AcceptedPatternsStore` (new key `smart_habits.accepted`); `DismissedPatternsStore` storage version bump for fingerprint extension
+7. `models.py` (MODIFY) — adds `TemporalPattern`, `PresencePattern`, `AcceptedPattern` dataclasses; extends `DetectedPattern.fingerprint` with `secondary_entity_id`
+8. `panel/smart-habits-panel.js` (NEW) — LitElement web component; bundled with Vite; registered via `panel_custom`
+9. `__init__.py` + `manifest.json` (MODIFY) — panel registration in `async_setup_entry`; add `frontend`, `panel_custom` to `after_dependencies`
 
 ### Critical Pitfalls
 
-1. **scikit-learn/numpy install failure on HAOS** — these packages require compiled C extensions and may fail on HAOS's musl-Linux environment with `PermissionError` or `ImportError`. Validate installation on real HAOS in Phase 1 before writing any ML code. Have a pure-Python fallback ready using `statistics`, `collections`, and simple frequency counting.
+1. **Automation file write succeeds but automation never appears** — always call `automation.reload` after writing to `automations.yaml`, then verify `hass.states.async_get(automation_entity_id)` is not None within a short timeout (2-3 seconds); surface a clear error to the user if verification fails; never declare success based only on the file write completing without error
 
-2. **Blocking the event loop during analysis** — running synchronous DB queries or CPU-bound loops inside `async def` functions freezes HA. HA 2024.7+ actively detects and logs this. Every DB call and every analysis function must be wrapped in `async_add_executor_job`. Never call SQLAlchemy sync APIs from async context.
+2. **Automation ID collision overwrites existing user automations** — check `hass.states.async_get()` for the derived automation entity ID before writing; prefix all Smart Habits automation IDs with `smart_habits_` plus a short UUID suffix; never silently overwrite; log a warning and surface the conflict to the user
 
-3. **Incorrect Recorder DB schema — missing `states_meta` JOIN** — `states.entity_id` does not exist as a direct column; it is stored in `states_meta.entity_id` joined via `states.metadata_id`. Queries that try to filter by entity_id directly return silently empty results. Always use the normalized join pattern and `last_updated_ts` (not the deprecated `last_updated` string column).
+3. **Temporal sequence detector O(n²) performance explosion on large installs** — never use nested entity-pair loops; use sorted timeline + sliding deque (O(N×W)); add a mandatory performance test: 50 entities × 30 days must complete in under 10 seconds; a pre-filter (only test pairs co-active on the same calendar day) cuts 80-90% of candidate pairs
 
-4. **Full DB scan without time filter** — querying all history without a `WHERE last_updated_ts >= cutoff` clause causes OOM and multi-minute query times on real installs with years of history. Always scope queries to the configurable lookback window from day one, never as an optimization later.
+4. **Presence detector flap noise from `device_tracker` entities** — prefer `person.*` domain exclusively (it aggregates and debounces trackers); apply `MIN_ARRIVAL_DWELL_SECONDS = 300` filter — a `not_home` → `home` transition that reverts within 5 minutes is a flap, not an arrival; only `person` entities that stay `home` for at least 5 minutes are counted as genuine arrivals
 
-5. **Blocking HA startup with inline analysis** — calling analysis in `async_setup_entry()` delays HA startup and may fail because the Recorder is not fully initialized. Always defer the first analysis run to `EVENT_HOMEASSISTANT_STARTED` and use `async_track_time_interval` for subsequent runs.
+5. **`DetectedPattern` fingerprint insufficient for new pattern types** — extend `DetectedPattern` with `secondary_entity_id: str | None = None`; update `DismissedPatternsStore` fingerprint, WebSocket schema, and bump `STORAGE_VERSION` in the same change; write migration for existing dismissed records (add `None` for `secondary_entity_id`); do this before writing the detectors
 
-6. **Direct `automations.yaml` file writes** — concurrent writes corrupt the file and break HA's automation editor. Use the internal REST API (`POST /api/config/automation/config/<id>`) exclusively. Isolate this behind `AutomationBuilder` so it can be updated in one place if the endpoint changes.
+6. **LitElement panel blank due to `webcomponent_name` mismatch or missing `hass` property declaration** — `webcomponent_name` in `async_register_panel` must match `customElements.define()` string exactly (byte-for-byte); declare `hass: { type: Object }` in `static get properties()`; set `embed_iframe=False`; establish a non-blank stub panel before building any UI features
 
-7. **Deprecated HA APIs breaking integration on updates** — `async_forward_entry_setup` (singular), `hass.async_add_job`, `HomeAssistantType` have all been removed. Use the `hacs/integration_blueprint` as a starting template, monitor the HA developer blog, and pin a minimum HA version in `manifest.json`.
-
----
+7. **WebSocket command double-registration on config entry reload** — guard `async_register_commands` with an `hass.data` flag so it runs once per HA instance lifetime; use `vol.Optional()` with defaults for new fields on existing commands (not `vol.Required()`) to maintain backward compatibility
 
 ## Implications for Roadmap
 
-Research strongly supports a 5-phase build sequence aligned with the architectural dependency chain. Each phase is independently testable before the next begins.
+Research confirms the ARCHITECTURE.md build order: bottom-up, each layer independently tested before wiring the next. The phase structure maps directly to the architectural dependency chain — each phase's output is a required input for the next.
 
-### Phase 1: Foundation — Async Patterns, DB Access, Integration Scaffold
+### Phase 1: Temporal Sequence Detector
 
-**Rationale:** Every subsequent feature depends on correct async patterns and a working Recorder query layer. Discovering HAOS dependency failures or event loop blocking late is extremely expensive to fix (full ML rewrite). Phase 1 validates the riskiest assumptions before committing to them.
+**Rationale:** Pure Python, zero HA lifecycle coupling; fastest to build and unit-test in isolation; validates the sliding-deque algorithm and establishes the `detectors/` subpackage structure before any HA wiring; also the right phase to extend the `DetectedPattern` fingerprint since that model change must precede all three new phases
+**Delivers:** `TemporalSequenceDetector` class with full unit test coverage; `TemporalPattern` dataclass; `detectors/` subpackage (`__init__.py`, `daily_routine.py` moved, `temporal.py` new); `DetectedPattern.secondary_entity_id` fingerprint extension with `STORAGE_VERSION` bump and migration
+**Addresses:** Temporal sequence detection (P1 table stakes); fingerprint extension (cross-cutting prerequisite)
+**Avoids:** Pitfall 3 (O(n²) explosion) — sliding-deque algorithm is the only acceptable implementation; Pitfall 5 (fingerprint collision) — model extended before detectors are wired
 
-**Delivers:** A loadable HA custom integration with config flow, coordinator skeleton, tested RecorderReader, confirmed HAOS dependency compatibility, and established async execution patterns.
+### Phase 2: Presence Pattern Detector
 
-**Addresses (from FEATURES.md):** Recorder DB query layer (P1 foundation), configurable lookback period, user/domain filtering (applied at query time).
+**Rationale:** Same interface contract as Phase 1 (`detect(states, lookback_days) -> list[Pattern]`); depends on `detectors/` subpackage and fingerprint extension from Phase 1; validates arrival dwell-time filter in pure Python before wiring to coordinator
+**Delivers:** `PresencePatternDetector` class with unit tests including flap-noise fixture; `PresencePattern` dataclass; dwell-time filter (`MIN_ARRIVAL_DWELL_SECONDS = 300`) proven in isolation; fallback to `device_tracker.*` when no `person.*` entities exist
+**Addresses:** Presence-based detection (P1 table stakes)
+**Avoids:** Pitfall 4 (flap noise) — dwell-time filter is a first-class requirement of this phase, not an afterthought; using `person.*` as primary domain is enforced from the start
 
-**Avoids (from PITFALLS.md):** Pitfalls 1 (HAOS install), 2 (event loop blocking), 3 (Recorder schema), 5 (blocking startup), 7 (deprecated APIs). These are all "foundation" pitfalls — discovering them here costs days; discovering them in Phase 4 costs weeks.
+### Phase 3: Coordinator Multi-Detector Wiring + Acceptance Store
 
-**Research flag:** Needs validation testing on real HAOS, not just dev container. Validate scikit-learn or confirm pure-Python fallback path before proceeding.
+**Rationale:** Requires both new detectors to exist; establishes the merged data model and acceptance persistence that automation creation and the panel both depend on; the `AcceptedPatternsStore` and coordinator filter must exist before `ws_accept_pattern` can be implemented
+**Delivers:** Coordinator runs all three detectors in single executor job (`_run_all_detectors`); `AcceptedPatternsStore` added to storage; coordinator filters dismissed + accepted patterns; `coordinator.data["accepted_patterns"]` key added; storage version migration tested end-to-end
+**Addresses:** Accepted patterns filtered from list (P1 fast-follow on acceptance); storage version bump and migration for fingerprint extension
+**Avoids:** Anti-pattern of running each detector in a separate executor job (GIL means no parallelism; one thread switch is optimal); Pitfall 5 migration tested here before acceptance flow is built on top
 
-### Phase 2: Pattern Detection Engine
+### Phase 4: AutomationCreator + Accept WebSocket Command
 
-**Rationale:** The analysis logic is pure Python with no HA dependencies — it can be built and unit-tested against static state fixtures without a running HA instance. Building detection before the UI and before automation creation means the core algorithm is validated before the harder integration work begins.
+**Rationale:** Automation creation is the highest-risk feature; isolating it to a dedicated phase limits blast radius if the file-write mechanism needs revision; the REST endpoint risk must be resolved before building any UI that depends on it; verifying the full accept roundtrip (write → reload → verify state exists → restart HA → verify persists) is mandatory before Phase 5
+**Delivers:** `automation_creator.py` with `build_automation_dict()` (synchronous, testable without HA) and `async_create_automation()` (async, wraps file write + reload + verification); `smart_habits/accept_pattern` and `smart_habits/get_accepted` WS commands with idempotency guard; `AutomationBuilder.to_description()` for human-readable preview; post-creation verification against HA state; graceful fallback (display generated YAML for manual copy) if `automations.yaml` is not writable
+**Addresses:** One-click accept → create real automation (P1); human-readable preview (P1); customized accept (P1)
+**Avoids:** Pitfall 1 (silent creation failure — verify-after-create is mandatory); Pitfall 2 (ID collision check before every write); Pitfall 7 (WS double-registration guard added here); Pitfall 10 (concurrent writes — `asyncio.Lock` in `automation_creator.py`)
 
-**Delivers:** `DailyRoutineDetector` (time-based patterns), confidence scoring, `ExistingAutomationFilter` (dedup), all unit-tested with fixtures representing real Recorder output shapes.
+### Phase 5: Sidebar Panel (LitElement)
 
-**Addresses (from FEATURES.md):** Time-based routine detection (P1), confidence scoring (P1), existing automation deduplication (P1).
-
-**Avoids (from PITFALLS.md):** Pitfall 4 (full DB scan) — implement lookback-scoped queries and row-count limits from the start. Pitfall 4's load test requirement: validate against a large fixture (500 entities, 90-day snapshot) in this phase.
-
-**Research flag:** Standard ML/statistics patterns; no additional research needed. Algorithm choices (OPTICS vs MiniBatchKMeans vs pure-Python frequency counting) depend on Phase 1 HAOS validation outcome.
-
-### Phase 3: Core Integration Wiring — Coordinator, WebSocket API, Storage, Panel Skeleton
-
-**Rationale:** Wire the tested detector into the HA integration lifecycle. Establish all communication channels (coordinator → WebSocket → panel) before building the full UI. A thin panel (JSON display) is sufficient to validate the data flow end to end.
-
-**Delivers:** PatternCoordinator with scheduled and on-demand analysis, full WebSocket API surface (`list_patterns`, `accept`, `dismiss`, `trigger_scan`), persistent storage for dismissed/accepted IDs, panel skeleton that displays pattern JSON from real coordinator data.
-
-**Addresses (from FEATURES.md):** Configurable analysis schedule/manual trigger (P1), persistent dismiss (P1), on-demand scan trigger (P1).
-
-**Avoids (from PITFALLS.md):** Pitfall 2 (event loop blocking — coordinator wires executor correctly here), Pitfall 5 (startup blocking — EVENT_HOMEASSISTANT_STARTED pattern established here).
-
-**Research flag:** WebSocket API registration is well-documented (HIGH confidence). DataUpdateCoordinator pattern is well-established. Standard patterns, no additional research needed.
-
-### Phase 4: Automation Creation
-
-**Rationale:** Automation creation is the highest-risk feature — the REST endpoint is undocumented, and the YAML structure varies by trigger type. Isolating it to a dedicated phase limits blast radius if the API approach needs revision. This phase also completes the core user journey: see suggestion → click accept → automation exists.
-
-**Delivers:** `AutomationBuilder` converting patterns to HA automation dicts, POST to `/api/config/automation/config/<id>`, full accept flow with persistence and coordinator refresh, automation deduplication verified end-to-end.
-
-**Addresses (from FEATURES.md):** Accept → real automation creation (P1, highest implementation cost).
-
-**Avoids (from PITFALLS.md):** Pitfall 6 (direct YAML file writes — `AutomationBuilder` uses REST API only). Isolating this component means a single file update if the internal endpoint changes.
-
-**Research flag:** Needs deeper research during planning. The REST endpoint is undocumented officially; inspect HA network traffic in DevTools to confirm current endpoint structure. Verify automation persistence across HA restart.
-
-### Phase 5: Review Panel UI
-
-**Rationale:** The WebSocket API is stable by Phase 4, so the panel has a well-defined contract to build against. Building UI last avoids rework when data shapes change during earlier phases.
-
-**Delivers:** Full LitElement sidebar panel — tabbed view (pending/accepted/dismissed), confidence scores with plain-language explanations, evidence examples ("happened 8/10 mornings"), accept/customize/dismiss actions, settings for lookback and threshold, manual scan trigger.
-
-**Addresses (from FEATURES.md):** Dedicated review UI (P1), show pattern evidence (P1), configurable lookback/threshold (P1).
-
-**Avoids (from PITFALLS.md):** UX pitfalls — confidence score must include plain-language explanation (not just a number), suggestion count must be capped to avoid overwhelm, dismissed suggestions must visually confirm persistence.
-
-**Research flag:** LitElement + Vite bundling is well-documented. Panel registration pattern is HIGH confidence. Standard patterns; no additional research needed beyond Phase 1 panel skeleton validation.
-
-### Phase 6: Differentiators (v1.x Post-Launch)
-
-**Rationale:** After the core loop is proven working and users are engaging, add the features that create real competitive advantage. These are deliberately deferred to avoid scope creep before the MVP is validated.
-
-**Delivers:** Presence-based pattern detection (`PresencePatternDetector`), stale automation detection tab, pattern preview in human language, customize-before-accepting flow, temporal sequence detection (A→B).
-
-**Addresses (from FEATURES.md):** All P2 features — presence detection, sequence detection, stale automation detection, human-language preview, customize before accept.
-
-**Research flag:** Presence-based and sequence detection need research during planning. Correlating `person`/`device_tracker` state changes with downstream entity events is a different algorithm path than daily routine detection. Temporal sequence detection conflicts with simple frequency counting — plan as a separate detector, not an extension of existing ones.
+**Rationale:** Panel depends on all backend WebSocket commands being stable; frontend iteration is slowest to test (requires browser + HA restart cycles); building last means the API contract does not change mid-panel-development; the pre-built `panel.js` must be committed to the repo for HACS distribution
+**Delivers:** LitElement web component bundled via Vite; panel registration in `async_setup_entry` with cleanup on unload; pattern cards with confidence + evidence; accept/dismiss/customize actions; stale automation list; fetch-after-mutate pattern for immediate state updates after every action; HA CSS custom properties for theming; friendly names via `hass.states.get(entity_id).attributes.get("friendly_name", entity_id)`
+**Addresses:** Sidebar panel (P1 table stakes); stale automation display in panel (P1 — UI only, data already in coordinator); pattern category grouping (P2 — low cost, panel-layer only)
+**Avoids:** Pitfall 6 (panel blank — establish non-blank stub before building features); Pitfall 4 (missing `hass` property declaration — verify `this.hass` defined in `connectedCallback` before any WS call); Pitfall 9 (stale panel state — fetch-after-mutate built into every action handler); Anti-pattern 5 (CDN LitElement import — Vite bundles Lit into output)
 
 ### Phase Ordering Rationale
 
-- **Foundation first:** HAOS dependency validation and async patterns are load-bearing assumptions. Discovering them broken in Phase 4 requires rewriting everything above them.
-- **Detection before UI:** Pure Python detectors are testable without HA running. Building them first produces validated, fixture-tested logic before wiring HA plumbing around it.
-- **WebSocket API before full UI:** Thin panel in Phase 3 validates the data contract. Full UI in Phase 5 builds against a stable API with real data shapes.
-- **Automation creation isolated:** The highest-risk, lowest-documented feature gets its own phase with no UI pressure. If the internal API approach fails, the fallback (file write + automation.reload) is swapped in one component without touching Phase 5.
-- **Differentiators deferred:** Presence and sequence detection are different algorithm paths that conflict with the simpler frequency analysis. Bolting them on during MVP development adds complexity that could delay delivery of table-stakes features.
+- Phases 1-2 (detectors) before Phase 3 (coordinator) because `_run_all_detectors` must import all three detector classes
+- The fingerprint extension (`secondary_entity_id`) is in Phase 1 because it is a prerequisite for correct dismiss/accept behavior in Phases 3-5; doing it later requires retroactive migration testing
+- Phase 3 (coordinator + acceptance store) before Phase 4 (automation creation) because `ws_accept_pattern` calls `coordinator.accepted_store.async_accept()` which requires the accepted store to exist
+- Phase 4 (automation creation) before Phase 5 (panel) because the panel is built against a stable, tested WebSocket API; any change to `accept_pattern` schema after the panel is written requires double-rework
+- The Vite build step (`npm run build` → `panel.js` committed to repo) must be established in Phase 5 setup before any panel UI code is written; the built artifact is what HACS installs
 
 ### Research Flags
 
-Phases needing deeper research during planning:
-- **Phase 1:** HAOS dependency validation — test `requirements` installation on real HAOS instance; have pure-Python fallback strategy documented before phase begins.
-- **Phase 4:** Automation creation API — inspect current HA network traffic to confirm endpoint structure and payload format; test automation CRUD roundtrip in isolation before integrating with coordinator.
-- **Phase 6:** Presence and sequence detection algorithms — needs specific research into HA `person`/`device_tracker` entity state history format and co-occurrence scoring approaches.
+Phases needing deeper investigation or live HA testing during planning:
 
-Phases with standard patterns (skip additional research):
-- **Phase 2:** Pure Python statistics and frequency counting are well-understood; algorithm choice confirmed by Phase 1 dependency outcome.
-- **Phase 3:** DataUpdateCoordinator + WebSocket API are HIGH confidence, extensively documented.
-- **Phase 5:** LitElement + Vite bundling + panel registration are HIGH confidence.
+- **Phase 4 (Automation Creation):** The Option A file-write + reload mechanism needs live HA testing to confirm: (a) `hass.config.path("automations.yaml")` resolves to the correct path and the file is writable, (b) the YAML dict structure is accepted without schema validation error, (c) the created automation appears in `hass.states` within the expected timeout, (d) the automation persists through HA restart. If Option A fails in practice (e.g., user uses `!include_dir_merge_list`), Option B (REST endpoint) becomes the fallback — which requires investigating auth token acquisition from inside a running integration. This risk is flagged in `PROJECT.md` and must be resolved in Phase 4 planning before code is written.
 
----
+- **Phase 5 (Panel Registration):** Panel registration via `panel_custom.async_register_panel` has shifted between HA versions. The `StaticPathConfig` API requires HA 2024.11+. Verify the exact registration call sequence against the target minimum HA version before writing panel UI. The `embed_iframe=False` requirement and exact `webcomponent_name` match are easy to get wrong silently — establish a passing stub test before any UI work.
+
+Phases with well-documented patterns (skip dedicated research):
+
+- **Phase 1-2 (Detectors):** Pure Python stdlib. No HA API surface. Algorithm is well-understood. Unit tests with static fixtures.
+
+- **Phase 3 (Coordinator wiring):** Follows identical `DataUpdateCoordinator` and `helpers.storage.Store` patterns proven in v1.0. No new HA API surface.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | MEDIUM-HIGH | HA integration patterns (HIGH); scikit-learn on HAOS (LOW — documented failures, needs validation); Lit/Vite panel bundle (HIGH); automation creation REST endpoint (MEDIUM — undocumented officially) |
-| Features | MEDIUM | Competitor analysis from direct code/README inspection (MEDIUM); UX principles from peer-reviewed sources (MEDIUM); smart home ML research (MEDIUM); one-click automation creation as differentiator (HIGH — no competitor does it) |
-| Architecture | MEDIUM-HIGH | Official HA developer docs for coordinator, WebSocket, panel registration (HIGH); Recorder DB schema internals (MEDIUM — schema documented by community, not official spec); automation REST API (LOW — confirmed by community, not official docs) |
-| Pitfalls | HIGH | HAOS install failure: multiple confirmed reports (HIGH); event loop blocking: official HA docs (HIGH); Recorder schema normalization: HA source code confirmation (HIGH); automation API: community consensus (MEDIUM) |
+| Stack | MEDIUM-HIGH | HA built-in panel registration (HIGH — official docs confirmed); Lit 3.x + Vite bundling (HIGH — official docs); automation creation Option A file-write (MEDIUM — documented HA behavior, used by several HACS integrations, but `automations.yaml` path assumption needs runtime check); Option B REST endpoint fallback (LOW — community-verified, officially undocumented) |
+| Features | HIGH | Table stakes, differentiators, and anti-features are well-defined from existing v1.0 research, competitor analysis, and `PROJECT.md` requirements. No ambiguity about what v1.1 must deliver. Prioritization matrix is clear. |
+| Architecture | HIGH | Layer structure, component boundaries, and data flow are clearly specified with code examples. Unified detector interface is clean and independently validated. v1.0 coordinator and storage patterns are proven in production. |
+| Pitfalls | HIGH | All pitfalls are concrete, specific, and derived from codebase analysis + HA API patterns. Performance pitfall (O(n²)) is mathematically certain. Flap noise is empirically documented in HA community. Fingerprint collision is a data model fact, not a speculation. WebSocket double-registration is a known HA integration lifecycle edge case. |
 
 **Overall confidence:** MEDIUM-HIGH
 
 ### Gaps to Address
 
-- **HAOS dependency validation:** Whether scikit-learn 1.6+ installs on HAOS is the single highest-risk unknown. Must be resolved in Phase 1 — do not write any ML code that depends on it until validated on a real HAOS instance. Pure-Python fallback algorithms (frequency counting with `statistics` + sliding window with `collections.Counter`) should be prototyped in parallel.
+- **Automation creation path assumption:** The default `automations.yaml` path holds for most HA installs but fails for users with `!include_dir_merge_list` or custom split configs. Implement a runtime check at `async_setup_entry` that verifies the path exists and is writable; if not, warn the user in the panel and display generated YAML for manual copy as a fallback. Do not attempt Option B silently.
 
-- **Automation creation API endpoint stability:** `POST /api/config/automation/config/<id>` is the community-confirmed approach but is not in official documentation. Inspect HA DevTools network traffic to confirm current payload structure. Design `AutomationBuilder` so the API call is a single swappable function — if the endpoint changes, one function changes.
+- **HA minimum version declaration:** `StaticPathConfig` requires HA 2024.11+. Declare `"homeassistant": "2024.11.0"` (or later) in `manifest.json` before Phase 5. Choose the minimum version that covers `StaticPathConfig` and any other new HA API surface used in v1.1.
 
-- **Recorder schema stability across HA versions:** The `states`/`states_meta` normalized schema has been stable since 2022-2023. However, minor column changes occur. Use only the documented stable columns (`state_id`, `metadata_id`, `state`, `last_updated_ts`). Test against both current HA stable and current HA dev/beta.
+- **`person` entity availability at runtime:** Research recommends `person.*` as primary presence source, but notes this assumes standard HA installs. Add a runtime check in `PresencePatternDetector.detect()`: if `hass.states.async_all("person")` is empty, fall back to `device_tracker.*` with explicit de-duplication logic to handle multi-tracker noise.
 
-- **Large-instance performance:** All load testing has been reasoning-based, not empirical. A 500-entity, 90-day fixture test in Phase 2 is the only way to validate that lookback windowing and entity filtering keep analysis under 30 seconds on Pi 4 class hardware.
-
----
+- **Vite build artifact in HACS distribution:** HACS installs the raw repository contents. The pre-built `panel.js` must be committed to version control. Establish a clear convention in Phase 5: run `npm run build` before tagging any release; add `frontend/panel.js` to git-tracked files explicitly; document the build step in `CONTRIBUTING.md`.
 
 ## Sources
 
 ### Primary (HIGH confidence)
-
-- [HA Developer Docs — DataUpdateCoordinator](https://developers.home-assistant.io/docs/integration_fetching_data/) — coordinator pattern, subscriber model
-- [HA Developer Docs — WebSocket API](https://developers.home-assistant.io/docs/frontend/extending/websocket-api/) — custom command registration
-- [HA Developer Docs — Custom Panels](https://developers.home-assistant.io/docs/frontend/custom-ui/creating-custom-panels/) — panel registration, LitElement
-- [HA Developer Docs — Blocking Operations](https://developers.home-assistant.io/docs/asyncio_blocking_operations/) — executor job patterns
-- [HA Developer Docs — Deprecations (async_run_job/add_job)](https://developers.home-assistant.io/blog/2024/03/13/deprecate_add_run_job/) — removed in 2025.4
-- [HA Core — history_stats/data.py](https://github.com/home-assistant/core/blob/dev/homeassistant/components/history_stats/data.py) — canonical Recorder executor pattern
-- [scikit-learn PyPI](https://pypi.org/project/scikit-learn/) — version compatibility (1.6+, Python 3.13)
-- [GitHub — Unable to import scikit-learn on HAOS](https://github.com/home-assistant/operating-system/issues/3040) — HAOS install failure reports
-- [HA Docs — Recorder](https://www.home-assistant.io/integrations/recorder) — backend DB schema
-- [Lit.dev — Build for Production](https://lit.dev/docs/v1/tools/build/) — Vite/Rollup bundling
+- HA Developer Docs: Custom Panels (`developers.home-assistant.io/docs/frontend/custom-ui/creating-custom-panels/`) — `panel_custom.async_register_panel`, `embed_iframe`, `webcomponent_name`
+- HA Developer Docs: Registering Resources — `StaticPathConfig`, static path registration
+- HA Developer Docs: WebSocket API (`developers.home-assistant.io/docs/frontend/extending/websocket-api/`) — custom command registration, `@websocket_command`
+- HA Developer Docs: DataUpdateCoordinator — coordinator lifecycle, subscriber model
+- HA Automation YAML docs (`home-assistant.io/docs/automation/yaml/`) — `automations.yaml` structure, `automation.reload` service, `id` field requirement
+- HA Developer Docs: `helpers.storage.Store` (`github.com/home-assistant/core/blob/dev/homeassistant/helpers/storage.py`) — existing use verified in v1.0
+- Lit.dev — LitElement reactive properties, decorators, `static get properties()`
+- Vite docs — Library mode, `build.lib`, `rollupOptions.external`
+- Python docs — `collections.deque`, `defaultdict`, `datetime.timedelta`
 
 ### Secondary (MEDIUM confidence)
-
-- [GitHub — Danm72/home-assistant-automation-suggestions](https://github.com/Danm72/home-assistant-automation-suggestions) — competitor analysis, frequency+time-window bucketing approach
-- [GitHub — ITSpecialist111/ai_automation_suggester](https://github.com/ITSpecialist111/ai_automation_suggester) — competitor analysis, LLM approach (cloud)
-- [Hackaday — Habit Detection for Home Assistant (TaraHome)](https://hackaday.com/2026/02/08/habit-detection-for-home-assistant/) — competitor, automatic YAML generation
-- [HA Community — Adding Sidebar Panel to Integration](https://community.home-assistant.io/t/how-to-add-a-sidebar-panel-to-a-home-assistant-integration/981585) — panel_custom.async_register_panel
-- [HA Community — scikit-learn with custom integration](https://community.home-assistant.io/t/how-to-use-scikit-learn-with-a-custom-intigration/536939) — HAOS requirements pattern
-- [SmartHomeScene — HA Database Model](https://smarthomescene.com/blog/understanding-home-assistants-database-and-statistics-model/) — states_meta schema
-- [HA Community — REST API for automations](https://community.home-assistant.io/t/rest-api-docs-for-automations/119997) — undocumented automation endpoint
+- HA Community: Adding sidebar panel to integration — panel_custom.async_register_panel patterns, idempotency
+- HA Community: REST API for automations (`community.home-assistant.io/t/rest-api-docs-for-automations/119997`) — Option B endpoint behavior
+- `@types/home-assistant-frontend` — TypeScript types for `hass` object
+- v1.0 phase research (`01-RESEARCH.md`, `3-RESEARCH.md`) — coordinator, storage, WebSocket patterns confirmed and carried forward
+- Competitor analysis (Danm72, ai_automation_suggester, TaraHome/Sherrin) — feature gap confirmation
 
 ### Tertiary (LOW confidence, needs validation)
-
-- Automation REST API payload structure — confirmed by community inspection, no official spec; verify with DevTools before Phase 4 implementation
-- HAOS musl wheel availability for scikit-learn — reported failures from 2023-2024; may have improved; must test against current HAOS version
+- `POST /api/config/automation/config/<id>` REST endpoint — community-verified, HA source-inspected; officially undocumented; needs live HA testing to confirm payload format and auth mechanism before using as Option B fallback
+- Automation file-write + `automation.reload` on non-default config layouts (`!include_dir_merge_list`) — behavior not confirmed; runtime path check is the mitigation
 
 ---
-
-*Research completed: 2026-02-22*
+*Research completed: 2026-02-23*
 *Ready for roadmap: yes*

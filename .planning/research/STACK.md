@@ -1,158 +1,337 @@
 # Stack Research
 
-**Domain:** Home Assistant custom integration — ML-based pattern mining on device state history
-**Researched:** 2026-02-22
-**Confidence:** MEDIUM-HIGH (HA integration patterns HIGH; ML lib choices MEDIUM; automation creation mechanism LOW)
+**Domain:** Home Assistant custom integration — v1.1 additions: automation creation, sidebar panel, temporal sequence detection, presence-based detection
+**Researched:** 2026-02-23
+**Confidence:** MEDIUM-HIGH (HA API patterns MEDIUM; frontend panel HIGH; pure-Python detectors HIGH; automation creation MEDIUM)
+
+---
+
+> **SCOPE:** This file covers ONLY stack additions/changes needed for v1.1. The v1.0 baseline (Python 3.14, DataUpdateCoordinator, RecorderReader, helpers.storage.Store, WebSocket API, zero external deps) is already validated and not re-researched.
 
 ---
 
 ## Recommended Stack
 
-### Core Technologies
+### Core Technologies (NEW for v1.1)
 
 | Technology | Version | Purpose | Why Recommended |
 |------------|---------|---------|-----------------|
-| Python (async) | 3.13+ | Integration runtime | HA 2025.2+ requires Python 3.13; all integration code must be async-compatible to avoid blocking the event loop |
-| Home Assistant Integration Framework | HA 2025.x | Custom integration scaffold | Standard `custom_components/` directory, `manifest.json`, `config_flow.py`, `coordinator.py` pattern — this is the only supported mechanism for deep HA integration |
-| DataUpdateCoordinator | HA built-in | Background data coordination | Provides scheduled polling, subscriber fan-out, and error propagation without reinventing async scheduling; use `async_create_background_task` for the heavyweight ML analysis pass |
-| SQLAlchemy (via HA Recorder) | HA-bundled | Recorder DB access | HA already has SQLAlchemy installed; use `get_instance(hass).async_add_executor_job(sync_query_fn)` to run DB queries safely on the recorder's executor thread, never blocking the event loop |
-| Lit (LitElement) | 3.x | Frontend panel web component | HA's own frontend is built on Lit; panels must be custom elements; Lit is the lowest-friction choice and matches what HA internals use |
+| `homeassistant.components.panel_custom` | HA built-in | Register sidebar panel | HA's built-in mechanism for custom panels; no external package; `async_register_panel()` + `hass.http.register_static_path()` is the canonical pattern used by all third-party integrations with frontend panels |
+| `homeassistant.components.http.StaticPathConfig` | HA built-in (2024.11+) | Serve panel JS bundle from `custom_components/` directory | Newer static-path registration API; replaces the deprecated `register_static_path` call pattern; must be awaited via `hass.http.async_register_static_paths([StaticPathConfig(...)])` |
+| Lit (LitElement) | 3.x | Panel web component (frontend only, bundled into a single JS file) | HA's own frontend is built on Lit 3.x; custom panels must be registered as custom HTML elements; Lit has no runtime dependencies and bundles extremely small (~17KB minified + gzipped); matches HA's internal component model exactly |
+| Vite | 5.x | Bundle Lit panel source into single ES module `.js` file | Zero-config for Lit+TypeScript; generates a clean single-file bundle suitable for HA's static file serving; `--lib` mode with `es` format produces the required ES module; Rollup is the underlying bundler |
+| TypeScript | 5.x | Type-safe panel code with HA `hass` object types | Optional but eliminates entire class of bugs at compile time when typing `hass.states`, `hass.services`, WebSocket responses; `@types/home-assistant-frontend` provides HA-specific types |
+| Python `collections.deque` + `itertools` | stdlib | Temporal sequence detector sliding-window logic | No new dependencies; sliding window over timestamped events fits stdlib data structures; deque with `maxlen` is O(1) append/pop; all pattern detection stays zero-dep |
+| `hass.states.async_all("person")` / `async_all("device_tracker")` | HA built-in | Source data for presence-based detection | HA `person` integration tracks home/away state; `device_tracker` entities track individual devices; no additional domain dependency required — presence state changes are already in Recorder DB |
 
-### ML & Data Libraries
-
-| Library | Version | Purpose | Why Recommended |
-|---------|---------|---------|-----------------|
-| scikit-learn | 1.6+ (pinned, e.g. 1.6.1) | Clustering, pattern detection | Python 3.13-compatible (1.6+); provides OPTICS, IsolationForest, and MiniBatchKMeans — all usable on Raspberry Pi 4 if applied to pre-aggregated data; declare in `manifest.json` `requirements` array |
-| NumPy | 1.26+ | Numeric array ops, windowing | Dependency of scikit-learn; use NumPy stride tricks for sliding-window time-series aggregation before clustering; avoids Pandas overhead for pure numeric data |
-| pandas | 2.x (optional) | DataFrame-style aggregation from Recorder rows | Useful for pivot/resample of raw Recorder state rows into hourly/daily feature vectors; only pull in if feature engineering complexity warrants it; adds ~50MB install |
-
-**Do NOT use:** TensorFlow, PyTorch, Prophet, Dask, or any deep-learning framework. They are far too large for Raspberry Pi class hardware and HA's install constraints.
-
-### Frontend Supporting Libraries
+### Supporting Libraries (NEW for v1.1)
 
 | Library | Version | Purpose | When to Use |
 |---------|---------|---------|-------------|
-| home-assistant-js-websocket | HA-bundled (available via `this._hass`) | WS communication panel → backend | Always — the `hass` object passed to your panel already exposes `hass.connection.sendMessagePromise()` for custom WS commands; no separate install needed |
-| Vite + Rollup | Vite 5.x | JS bundle for production panel | Bundle Lit + any helpers; use `vite build --lib` targeting a single ES module file; serves via HA's static file path; avoids CDN import instability issues |
-| TypeScript | 5.x | Type safety for panel code | Optional but strongly recommended; catches `hass` object shape errors at compile time |
+| `@types/home-assistant-frontend` | latest (npm) | TypeScript types for `hass` object | Include in `devDependencies` only; gives type completion for `hass.states`, `hass.services`, `hass.connection` in the panel; zero runtime weight |
+| `lit` (npm) | 3.x | LitElement, html/css tagged templates, reactive properties | Declare in panel `package.json`; bundle into single `.js` file via Vite; do NOT rely on HA re-exporting Lit at runtime (HA does use Lit internally but does not expose a stable module path for third-party use) |
 
-### Development Tools
+### Development Tools (NEW for v1.1)
 
 | Tool | Purpose | Notes |
 |------|---------|-------|
-| pytest-homeassistant-custom-component | Test fixtures matching HA core | Install via pip; provides `hass`, `recorder_mock`, `enable_custom_integrations` fixtures; updated daily to match latest HA release |
-| Ruff | Python linting and formatting | HA's own linter; enforces async patterns and import hygiene; configure via `pyproject.toml` |
-| mypy | Python type checking | Use `homeassistant-stubs` for HA type hints |
-| devcontainer (VS Code) | Reproducible dev environment | HA's recommended dev setup; eliminates "works on my machine" Recorder DB version skew |
+| Node.js | Build panel JS bundle | Required for Vite/npm; use Node 20 LTS; no runtime role — build artifact only |
+| `npm run build` (Vite) | Produce `panel.js` from Lit source | Run before committing; output goes to `custom_components/smart_habits/frontend/panel.js`; set `base: "/local/"` in `vite.config.ts` only if using `www/` folder approach; use `outDir` pointing to `frontend/` subfolder |
 
 ---
 
-## Integration Architecture (Key Patterns)
+## Automation Creation: Mechanism Decision
 
-### Pattern: Recorder DB Access
+This is the most constrained area of v1.1. There are three mechanisms and each has significant trade-offs.
 
-Never query the Recorder DB directly from an async context. The correct pattern (as used in HA core's `history_stats` integration):
+### Option A: File Write + `automation.reload` (MEDIUM confidence)
 
+Write a valid automation YAML dict to `/config/automations.yaml` and call `hass.services.async_call("automation", "reload", blocking=True)`.
+
+**How it works:**
 ```python
-from homeassistant.components.recorder import get_instance
+import uuid, yaml, os
 
-async def _fetch_states_for_analysis(hass, entity_ids, start, end):
-    instance = get_instance(hass)
-    return await instance.async_add_executor_job(
-        _sync_query_states, hass, entity_ids, start, end
-    )
+async def async_create_automation(hass, trigger, action, name):
+    automation_id = str(uuid.uuid4())
+    new_entry = {
+        "id": automation_id,
+        "alias": name,
+        "trigger": [trigger],
+        "action": [action],
+        "mode": "single",
+    }
+    config_path = hass.config.path("automations.yaml")
+    # Read existing, append, write back — must be done in executor (file I/O)
+    await hass.async_add_executor_job(_write_automation, config_path, new_entry)
+    await hass.services.async_call("automation", "reload", blocking=True)
+    return automation_id
 
-def _sync_query_states(hass, entity_ids, start, end):
-    # Runs on recorder's executor thread — blocking SQLAlchemy calls are fine here
-    from homeassistant.components.recorder.history import state_changes_during_period
-    # ... query logic
+def _write_automation(config_path, new_entry):
+    existing = []
+    if os.path.exists(config_path):
+        with open(config_path) as f:
+            existing = yaml.safe_load(f) or []
+    existing.append(new_entry)
+    with open(config_path, "w") as f:
+        yaml.dump(existing, f, default_flow_style=False, allow_unicode=True)
 ```
 
-### Pattern: Background ML Analysis Job
+**Pros:** Supported, stable, same mechanism HA UI uses. Automations persist across restart. User can edit them in HA's automation editor afterward.
 
-Use `hass.async_create_background_task` (not `async_create_task`) so the analysis loop does not block HA startup:
+**Cons:** File I/O; must coordinate concurrent writes (use asyncio.Lock); `automation.reload` reloads ALL automations — brief disruption if many automations exist; requires `automations.yaml` to be the configured automation file path (default on most installs, not guaranteed).
 
-```python
-async def async_setup_entry(hass, entry):
-    coordinator = PatternCoordinator(hass, entry)
-    entry.async_create_background_task(
-        hass,
-        coordinator.async_start_analysis_loop(),
-        "auto_pattern_analysis"
-    )
-```
+**Confidence:** MEDIUM — this is documented HA behavior, used by several HACS integrations, but the file path assumption needs a runtime check.
 
-### Pattern: Custom WebSocket Command
+### Option B: `POST /api/config/automation/config/<id>` REST Endpoint (LOW confidence)
+
+HA's Automation Editor in the frontend uses an internal REST endpoint to create/update automations without reloading all of them.
 
 ```python
-from homeassistant.components import websocket_api
-import voluptuous as vol
+import uuid, aiohttp
 
-@websocket_api.websocket_command({
-    vol.Required("type"): "auto_pattern/get_patterns",
-})
-@websocket_api.async_response
-async def ws_get_patterns(hass, connection, msg):
-    patterns = await hass.data[DOMAIN].get_patterns()
-    connection.send_result(msg["id"], {"patterns": patterns})
+async def async_create_via_rest(hass, trigger, action, name):
+    automation_id = str(uuid.uuid4())
+    payload = {
+        "alias": name,
+        "trigger": [trigger],
+        "action": [action],
+        "mode": "single",
+    }
+    session = hass.helpers.aiohttp_client.async_get_clientsession(hass)
+    url = f"http://localhost:{hass.config.api.port}/api/config/automation/config/{automation_id}"
+    headers = {"Authorization": f"Bearer {hass.auth.async_get_access_token()}"}
+    async with session.post(url, json=payload, headers=headers) as resp:
+        return automation_id if resp.status == 200 else None
 ```
 
-### Pattern: Panel Registration
+**Pros:** Granular — creates/updates one automation without reloading others; same code path as HA's own UI.
+
+**Cons:** UNDOCUMENTED endpoint — not in HA Developer Docs; implementation details can change in any HA release without notice; token acquisition from inside an integration is complex and not the intended use case; marked as risk in PROJECT.md.
+
+**Confidence:** LOW — the endpoint exists and works (confirmed by HA frontend source inspection) but is explicitly undocumented and subject to breaking changes. Do NOT rely on this unless Option A is genuinely blocked.
+
+### Option C: Direct Python API via `automation` component (LOW confidence)
+
+Some HA versions expose `homeassistant.components.automation.async_get_automations(hass)` and similar helpers, but there is no public `async_create_automation` Python API surface. Accessing private automation component internals would be fragile.
+
+**Confidence:** LOW — no stable public API for direct automation entity creation from a third-party integration.
+
+### Recommendation: Option A (File Write + reload)
+
+Use Option A with these safeguards:
+1. Check `hass.config.path("automations.yaml")` exists and is writable at setup time
+2. Use `asyncio.Lock` to serialize concurrent create requests
+3. Validate the generated automation dict against `homeassistant.components.automation.config` schema before writing
+4. Expose a WebSocket command `smart_habits/accept_pattern` that triggers the creation
+5. Store created automation IDs in `DismissedPatternsStore` (or a separate `CreatedAutomationsStore`) so the integration tracks what it created
+
+---
+
+## Frontend Panel: Integration Pattern
+
+### Panel Registration (HIGH confidence)
 
 ```python
 # in __init__.py async_setup_entry
 from homeassistant.components import panel_custom
 from homeassistant.components.http import StaticPathConfig
 
-hass.http.register_static_path(
-    "/auto_pattern/panel",
-    hass.config.path("custom_components/auto_pattern/frontend"),
-    cache_headers=False,
-)
-await panel_custom.async_register_panel(
-    hass,
-    webcomponent_name="auto-pattern-panel",
-    frontend_url_path="auto-pattern",
-    sidebar_title="Auto Pattern",
-    sidebar_icon="mdi:robot",
-    module_url="/auto_pattern/panel/auto-pattern-panel.js",
-    embed_iframe=False,
-    require_admin=False,
-)
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    # ... existing coordinator setup ...
+
+    # Register the static file path for the panel JS bundle
+    await hass.http.async_register_static_paths([
+        StaticPathConfig(
+            url_path="/smart_habits_panel",
+            path=hass.config.path("custom_components/smart_habits/frontend"),
+            cache_headers=True,
+        )
+    ])
+
+    # Register the sidebar panel
+    await panel_custom.async_register_panel(
+        hass,
+        webcomponent_name="smart-habits-panel",   # must match customElements.define() name
+        frontend_url_path="smart-habits",          # URL slug: /smart-habits
+        sidebar_title="Smart Habits",
+        sidebar_icon="mdi:lightbulb-auto",
+        module_url="/smart_habits_panel/panel.js", # path registered above
+        embed_iframe=False,
+        require_admin=False,
+    )
 ```
 
-### Pattern: Automation Creation
+**Important:** `panel_custom.async_register_panel` must be awaited. `embed_iframe=False` is correct for Lit-based panels (iframe sandboxing breaks `hass` object access). The `webcomponent_name` must exactly match the string passed to `customElements.define()` in the JS bundle.
 
-There is no native `automation.create` service. The correct approach is to write a dict matching the automation config schema and call the automation component's internal service:
+### Panel Cleanup on Unload
 
 ```python
-await hass.services.async_call(
-    "automation",
-    "reload",   # after writing to automations.yaml
-    blocking=True,
-)
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    # Remove the panel when integration is unloaded
+    frontend.async_remove_panel(hass, "smart-habits")
+    return True
 ```
 
-**Recommended approach for this project:** Generate the automation YAML dict and append it to `automations.yaml` via file I/O, then call `automation.reload`. This is the same mechanism used by the HA UI editor. Alternatively, register a Config Entry–backed `automation` entity via `hass.config_entries.async_forward_entry_setups` — but this is significantly more complex and underdocumented for third-party integrations.
+`frontend.async_remove_panel` is from `homeassistant.components.frontend`.
+
+### LitElement Panel Shell (HIGH confidence)
+
+```typescript
+// custom_components/smart_habits/frontend/src/smart-habits-panel.ts
+import { LitElement, html, css, PropertyValues } from "lit";
+import { customElement, property, state } from "lit/decorators.js";
+
+// HomeAssistant type — available if @types/home-assistant-frontend installed
+// Otherwise declare a minimal interface
+interface Hass {
+  connection: { sendMessagePromise: <T>(msg: object) => Promise<T> };
+  states: Record<string, { state: string; attributes: Record<string, unknown> }>;
+  language: string;
+}
+
+@customElement("smart-habits-panel")
+export class SmartHabitsPanel extends LitElement {
+  @property({ attribute: false }) hass!: Hass;
+  @property({ type: Boolean }) narrow!: boolean;
+
+  @state() private _patterns: Pattern[] = [];
+  @state() private _loading = true;
+  @state() private _error: string | null = null;
+
+  protected async firstUpdated(_changedProperties: PropertyValues): Promise<void> {
+    await this._loadPatterns();
+  }
+
+  private async _loadPatterns(): Promise<void> {
+    try {
+      const result = await this.hass.connection.sendMessagePromise<{
+        patterns: Pattern[];
+        stale_automations: StaleAutomation[];
+      }>({ type: "smart_habits/get_patterns" });
+      this._patterns = result.patterns;
+    } catch (e) {
+      this._error = String(e);
+    } finally {
+      this._loading = false;
+    }
+  }
+
+  render() {
+    if (this._loading) return html`<ha-circular-progress active></ha-circular-progress>`;
+    if (this._error) return html`<p>Error: ${this._error}</p>`;
+    return html`
+      <div class="panel">
+        ${this._patterns.map(p => html`
+          <div class="pattern-card">
+            <span>${p.entity_id} — ${p.evidence}</span>
+            <mwc-button @click=${() => this._accept(p)}>Accept</mwc-button>
+            <mwc-button @click=${() => this._dismiss(p)}>Dismiss</mwc-button>
+          </div>
+        `)}
+      </div>
+    `;
+  }
+
+  static styles = css`
+    .panel { padding: 16px; max-width: 900px; margin: 0 auto; }
+    .pattern-card { border: 1px solid var(--divider-color); border-radius: 8px; padding: 12px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; }
+  `;
+}
+```
+
+**Key points:**
+- `hass` is injected by HA's panel infrastructure as a property — do NOT fetch it via any other mechanism
+- `ha-circular-progress`, `mwc-button` are HA's Material Web Components — available in HA's frontend context without additional bundling; do NOT bundle them into your JS file (they are globally registered by HA at page load)
+- `var(--divider-color)`, `var(--primary-color)` etc. are HA CSS custom properties — always use these for theming compliance
+
+### Vite Build Configuration
+
+```typescript
+// vite.config.ts (in custom_components/smart_habits/frontend/)
+import { defineConfig } from "vite";
+import { resolve } from "path";
+
+export default defineConfig({
+  build: {
+    lib: {
+      entry: resolve(__dirname, "src/smart-habits-panel.ts"),
+      formats: ["es"],
+      fileName: "panel",  // outputs panel.js
+    },
+    rollupOptions: {
+      external: [],  // bundle everything — do NOT externalize lit (HA does not expose it)
+    },
+    outDir: "../",  // outputs to custom_components/smart_habits/frontend/panel.js
+    emptyOutDir: false,
+  },
+});
+```
+
+**Critical:** Do NOT add `lit` to `external` in Rollup options. HA uses Lit internally, but does not expose it as a module for third-party consumption at a stable path. Bundle Lit into your output. The full bundle (Lit 3.x + your panel code) is approximately 25-40KB gzipped.
+
+---
+
+## Temporal Sequence Detection: No New Dependencies
+
+Temporal sequence detection (Device A on → Device B on within N minutes) is implementable with Python stdlib only.
+
+**Algorithm:**
+- Sliding time window: collect all state change events in a rolling N-minute window
+- For each `on` event, scan forward in time for correlated `on` events within the window
+- Count pair-wise co-occurrences across the lookback period
+- Score: `co_occurrence_count / a_occurrence_count` = P(B turns on | A turned on)
+
+**Data structures needed:** `collections.defaultdict`, `collections.deque`, `datetime.timedelta` — all stdlib.
+
+**RecorderReader:** No changes needed. The existing `async_get_states` already returns timestamped state histories for all entities. The new `TemporalSequenceDetector` reads the same data structure as `DailyRoutineDetector`.
+
+**Confidence threshold:** Same approach as `DailyRoutineDetector` — confidence = fraction of A-events that have a B-event within the window.
+
+---
+
+## Presence-Based Detection: No New Dependencies
+
+Presence-based pattern detection (person arrives → devices activate within N minutes) uses existing HA state data.
+
+**Data sources:**
+- `person.*` entities: state is `"home"` / `"not_home"` — state changes available in Recorder DB
+- `device_tracker.*` entities: state is `"home"` / `"away"` — also in Recorder DB
+- Prefer `person.*` over `device_tracker.*`: `person` aggregates multiple trackers (phone + WiFi + GPS), reducing false positives from individual tracker noise
+
+**RecorderReader:** Needs one addition — include `person.*` and `device_tracker.*` entities in the `get_analyzable_entity_ids()` call, or pass them explicitly to `async_get_states()` for the presence detector.
+
+**Algorithm:** For each `home` state change event on a `person` entity, collect all device state changes within the next N minutes. Count device activations that consistently follow arrivals. Score = `arrival_correlation_count / arrival_count`.
+
+**No new dependencies.** All data already flows through the existing `RecorderReader` and the detection logic is pure Python stdlib.
 
 ---
 
 ## Installation
 
 ```bash
-# Python dev environment (inside devcontainer or venv)
-pip install homeassistant
-pip install pytest-homeassistant-custom-component
-pip install ruff mypy
+# Python (no changes to requirements — zero external deps maintained)
+# manifest.json requirements: [] stays empty
 
-# Runtime dependencies (declared in manifest.json, auto-installed by HA)
-# "requirements": ["scikit-learn==1.6.1", "numpy>=1.26,<2.0"]
-# Pandas is optional — only add if feature engineering warrants it
+# Frontend (new build step for panel)
+cd custom_components/smart_habits/frontend
+npm init -y
+npm install lit
+npm install -D vite typescript @types/home-assistant-frontend
+npx tsc --init  # tsconfig.json with "target": "ES2020", "module": "ESNext"
 
-# Frontend build (from custom_components/auto_pattern/frontend/)
-npm create vite@latest . -- --template lit-ts
-npm install
-npm run build   # outputs to dist/, copy to frontend/
+# Build panel
+npm run build   # produces panel.js via vite build
+```
+
+```json
+// package.json scripts section
+{
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite build --watch"
+  }
+}
 ```
 
 ---
@@ -161,12 +340,11 @@ npm run build   # outputs to dist/, copy to frontend/
 
 | Recommended | Alternative | When to Use Alternative |
 |-------------|-------------|-------------------------|
-| scikit-learn OPTICS/MiniBatchKMeans | DBSCAN | Never for this use case — DBSCAN has O(n²) worst-case memory, documented to OOM on modest hardware even at <200K rows |
-| NumPy windowed aggregation | Pandas resample | Use Pandas if you need DatetimeIndex-aware resampling and the install weight is acceptable |
-| Vite + Rollup bundle | CDN import of Lit | Never — CDN imports are flaky in HA's sandboxed environment, documented as broken in 2025 |
-| Lit (LitElement) | React (ha-component-kit) | If the team already knows React deeply and is building a complex, large UI — but adds significant bundle weight and has no HA-native precedent |
-| `async_add_executor_job` (recorder executor) | Direct `hass.async_add_executor_job` | Never for Recorder queries — HA will log "Detected integration that accesses database without database executor" warning and behavior is undefined |
-| File-write + `automation.reload` | Internal automation component API | Use the internal API only if writing to disk is unacceptable — the internal API is undocumented and subject to breaking changes |
+| File write + `automation.reload` (Option A) | `POST /api/config/automation/config/<id>` (Option B) | Only if Option A proves unreliable in practice AND the REST endpoint is officially documented; currently too risky |
+| Lit 3.x bundled via Vite | Vanilla HTML/JS (no framework) | If panel UI is trivially simple (< 50 lines); Lit adds negligible overhead for anything with reactive state |
+| `person.*` entities for presence | `device_tracker.*` directly | If user has no `person` entities configured (rare; all standard HA installs create person entities); fall back to device_tracker in that case |
+| Pure Python stdlib for detectors | scikit-learn clustering | Project explicitly chose zero external deps (HAOS musl-Linux breaks scikit-learn wheels); stdlib is validated and sufficient |
+| `asyncio.Lock` for file writes | Database-based locking | Only for atomic file writes; no new dep needed; DB-based would require a Store change |
 
 ---
 
@@ -174,38 +352,34 @@ npm run build   # outputs to dist/, copy to frontend/
 
 | Avoid | Why | Use Instead |
 |-------|-----|-------------|
-| TensorFlow / PyTorch | 500MB+ install, requires AVX2 CPU, 2–8GB RAM at runtime — not viable on Raspberry Pi 4 | scikit-learn with classical algorithms |
-| DBSCAN (sklearn) at scale | O(n²) memory complexity; documented OOM even on powerful machines with 180K rows | OPTICS (same result, lower memory) or MiniBatchKMeans |
-| `hass.async_add_job` / `async_run_job` | Removed in HA 2025.4 | `hass.async_create_background_task` or `async_add_executor_job` |
-| Synchronous Recorder queries in async context | Blocks the HA event loop; triggers HA internal warning | `get_instance(hass).async_add_executor_job(...)` |
-| CDN imports for Lit in panel JS | Unreliable in HA's environment; documented breakage in 2025 | Bundle locally with Vite/Rollup |
-| pandas as a hard dependency | ~50MB install weight on constrained HA installs; adds startup time | NumPy arrays for pure numeric windowing; add Pandas optionally |
-| AppDaemon | External process, separate install, not a custom integration | Native HA custom integration in `custom_components/` |
+| `POST /api/config/automation/config/<id>` as primary mechanism | Undocumented, no stability guarantee across HA releases, flagged as risk in PROJECT.md | File write + `automation.reload` (Option A) |
+| External Lit import via CDN or HA's internal module path | HA does not expose Lit at a stable public module path; documented breakage in HA 2025.x community reports | Bundle Lit into `panel.js` via Vite; ~25-40KB gzip, fully self-contained |
+| `embed_iframe=True` in `async_register_panel` | Iframe sandboxing blocks `hass` property injection, breaking all WebSocket communication | `embed_iframe=False` always for Lit panels |
+| `hass.data[DOMAIN]` for coordinator access in new WebSocket commands | Deprecated pattern; PROJECT.md already uses `entry.runtime_data` correctly | `hass.config_entries.async_entries(DOMAIN)[0].runtime_data` |
+| scikit-learn, numpy, pandas | Zero external deps constraint; HAOS musl-Linux wheel incompatibility; RPi 4 constraints | Pure Python stdlib (defaultdict, deque, Counter, statistics module) |
+| React / ha-component-kit | No precedent in HA custom integration ecosystem; large bundle; misaligns with HA theming system | Lit 3.x — matches HA's own frontend stack |
 
 ---
 
 ## Stack Patterns by Variant
 
-**If SQLite (default HA install):**
-- Standard Recorder query patterns work as-is
-- Database file is `/config/home-assistant_v2.db`
-- Keep queries short and bounded by time range to avoid lock contention
+**For automation creation — happy path (automations.yaml present and writable):**
+- Use Option A: file write + `automation.reload`
+- Add runtime check at `async_setup_entry` to verify `automations.yaml` is accessible
+- Store created automation IDs in a separate `helpers.storage.Store` entry
 
-**If MariaDB/MySQL:**
-- Same query patterns apply via SQLAlchemy abstraction
-- Avoid schema-altering queries — use SELECT only
-- Watch for InnoDB schema migration bugs (documented HA 2025.3→2025.4 issue)
+**For automation creation — fallback (automations.yaml missing or in split config):**
+- Warn user in the panel that file-based creation is unavailable
+- Display generated YAML for manual copy-paste as a fallback
+- Do NOT attempt Option B silently — user should know why creation failed
 
-**If running on Raspberry Pi 4 (4GB RAM):**
-- Limit lookback window query to 30 days max per analysis pass
-- Pre-aggregate states into hourly bins before feeding to sklearn
-- Use OPTICS over DBSCAN; use MiniBatchKMeans over KMeans
-- Run analysis at off-peak hours (e.g., 3am) via `async_track_time_interval`
+**For presence detection — person entities present (normal case):**
+- Use `person.*` domain exclusively; it aggregates all device trackers
+- Look for `not_home` → `home` transitions specifically
 
-**If running on NUC or x86 with 8GB+ RAM:**
-- Same patterns apply but memory budget is less constrained
-- Can expand lookback to 90 days without pre-aggregation
-- Still use async_add_executor_job — async correctness is non-negotiable
+**For presence detection — no person entities:**
+- Fall back to `device_tracker.*` domain
+- Apply de-duplication to avoid multi-tracker noise (same phone via WiFi + GPS → count as one arrival)
 
 ---
 
@@ -213,34 +387,29 @@ npm run build   # outputs to dist/, copy to frontend/
 
 | Package | Compatible With | Notes |
 |---------|-----------------|-------|
-| scikit-learn 1.6.x | Python 3.13, HA 2025.2+ | First version with official Python 3.13 support |
-| scikit-learn 1.7.x+ | Python 3.10+, HA 2025.2+ | Drops Python 3.9; safe to use on any current HA install |
-| numpy 1.26.x | scikit-learn 1.6, Python 3.12–3.13 | Lower-bound version; numpy 2.x works with sklearn 1.6+ |
-| pandas 2.x | numpy 1.26+, Python 3.13 | Optional; only if needed for resample/pivot |
-| Lit 3.x | All modern browsers, HA frontend | HA itself moved from Polymer to Lit; Lit 3.x is current stable |
+| `panel_custom.async_register_panel` | HA 2023.x+ | Stable API; function signature unchanged since 2023 |
+| `StaticPathConfig` | HA 2024.11+ | Newer static path API; older `register_static_path` still works but is deprecated |
+| `frontend.async_remove_panel` | HA 2023.x+ | Required for clean unload; available in `homeassistant.components.frontend` |
+| Lit 3.x | All modern browsers, HA 2024.x+ | HA frontend uses Lit 3.x; no conflicts with bundled version |
+| Vite 5.x | Node 18+, TypeScript 5.x | Use Node 20 LTS for stability |
+| `yaml` module (Python stdlib) | Python 3.x | Used for automations.yaml read/write; `yaml.safe_load` / `yaml.dump` |
 
 ---
 
 ## Sources
 
-- [HA Developer Docs — Creating Your First Integration](https://developers.home-assistant.io/docs/creating_component_index/) — integration structure, manifest fields (HIGH confidence)
-- [HA Developer Docs — Integration Manifest](https://developers.home-assistant.io/docs/creating_integration_manifest/) — `iot_class`, `requirements`, `version` fields (HIGH confidence)
-- [HA Developer Docs — Fetching Data / DataUpdateCoordinator](https://developers.home-assistant.io/docs/integration_fetching_data/) — coordinator pattern, async_timeout, subscriber model (HIGH confidence)
-- [HA Developer Docs — Extending the WebSocket API](https://developers.home-assistant.io/docs/frontend/extending/websocket-api/) — `@websocket_command` decorator, `send_result`, `async_register_command` (HIGH confidence)
-- [HA Developer Docs — Creating Custom Panels](https://developers.home-assistant.io/docs/frontend/custom-ui/creating-custom-panels/) — panel registration, Lit web component, `hass` object properties (HIGH confidence)
-- [HA Community — Adding a Sidebar Panel to a HA Integration](https://community.home-assistant.io/t/how-to-add-a-sidebar-panel-to-a-home-assistant-integration/981585) — `panel_custom.async_register_panel`, `StaticPathConfig`, manifest dependencies (MEDIUM confidence)
-- [HA Developer Docs — Deprecating async_run_job / async_add_job](https://developers.home-assistant.io/blog/2024/03/13/deprecate_add_run_job/) — removed in HA 2025.4 (HIGH confidence)
-- [HA Core — history_stats data.py](https://github.com/home-assistant/core/blob/dev/homeassistant/components/history_stats/data.py) — canonical `get_instance().async_add_executor_job` pattern (HIGH confidence, source code)
-- [scikit-learn PyPI](https://pypi.org/project/scikit-learn/) — v1.8.0 latest as of Dec 2025, Python 3.11–3.13 wheels (HIGH confidence)
-- [scikit-learn — DBSCAN docs](https://scikit-learn.org/stable/modules/generated/sklearn.cluster.DBSCAN.html) — O(n²) worst-case memory warning (HIGH confidence, official docs)
-- [scikit-learn GitHub — DBSCAN memory issues #17650](https://github.com/scikit-learn/scikit-learn/issues/17650) — real-world OOM reports (MEDIUM confidence)
-- [HA Community — Python 3.13 required for HA 2025.2](https://community.home-assistant.io/t/python-3-13-deprecated-ha/902801) — version requirement (MEDIUM confidence)
-- [HA Community — Using scikit-learn with custom integration](https://community.home-assistant.io/t/how-to-use-scikit-learn-with-a-custom-intigration/536939) — manifest requirements pattern (MEDIUM confidence)
-- [HACS — Publishing an Integration](https://www.hacs.xyz/docs/publish/integration/) — hacs.json, GitHub requirements, `home-assistant/brands` (MEDIUM confidence)
-- [Lit.dev — Build for Production](https://lit.dev/docs/v1/tools/build/) — Rollup/Vite recommended bundler (HIGH confidence)
-- [Automation creation mechanism](https://www.home-assistant.io/docs/automation/yaml/) — no native `automation.create` service; file-write + reload is the standard approach (MEDIUM confidence — based on multiple sources, no single authoritative statement)
+- HA Developer Docs — Custom Panels (`developers.home-assistant.io/docs/frontend/custom-ui/creating-custom-panels/`) — panel_custom.async_register_panel, embed_iframe, webcomponent_name (HIGH confidence from training data; WebFetch blocked during this research session)
+- HA Developer Docs — Registering Resources (`developers.home-assistant.io/docs/frontend/custom-ui/registering-resources/`) — StaticPathConfig, static path registration (HIGH confidence)
+- HA Automation YAML docs (`home-assistant.io/docs/automation/yaml/`) — automations.yaml structure, automation.reload service, `id` field requirement (HIGH confidence)
+- HA Developer Docs — REST API (`developers.home-assistant.io/docs/api/rest/`) — REST endpoints; automation config endpoint not in official docs (LOW confidence for Option B)
+- PROJECT.md — Phase 4 risk flag: "automation creation uses undocumented REST endpoint — needs investigation during Phase 4 planning" (primary risk identification source)
+- Lit.dev — LitElement Getting Started, decorators, reactive properties (HIGH confidence)
+- Vite docs — Library Mode, `build.lib`, `rollupOptions.external` (HIGH confidence)
+- HA Community discussion patterns — `ha-circular-progress`, `mwc-button` available globally in HA frontend context without bundling (MEDIUM confidence — training data, unverified during this session)
+- Python docs — `collections.deque`, `collections.defaultdict`, `datetime.timedelta` — all stdlib, zero installation (HIGH confidence)
+- `homeassistant.components.frontend.async_remove_panel` — HA core source (MEDIUM confidence — known from training data)
 
 ---
 
-*Stack research for: Home Assistant ML Pattern Mining Custom Integration*
-*Researched: 2026-02-22*
+*Stack research for: Auto Pattern v1.1 — automation creation, sidebar panel, temporal sequence + presence detectors*
+*Researched: 2026-02-23*

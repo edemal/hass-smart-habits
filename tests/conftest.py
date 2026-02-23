@@ -149,6 +149,84 @@ def states_90d_500e():
     return states
 
 
+# ---------------------------------------------------------------------------
+# Temporal sequence fixture: 50-entity, 30-day state history
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def temporal_states_30d():
+    """Generate a 50-entity, 30-day state history with known A->B sequences.
+
+    Known sequences embedded for assertion:
+    - light.hallway -> light.kitchen: hallway activates every day; kitchen
+      activates 2-3 min later on 20 of 30 days (skip every 3rd day).
+      Confidence ~20/30 ≈ 0.67 at 5-min window.
+    - switch.door_sensor -> light.porch: door_sensor activates daily; porch
+      activates within 1 min on 25 of 30 days (skip every 6th day).
+      Confidence ~25/30 ≈ 0.83 at 5-min window.
+    - 46 noise entities: random activations with a seeded RNG.
+
+    All records as minimal dicts {"last_changed": ISO-string, "state": "on"/"off"}.
+    """
+    base_time = datetime(2025, 12, 1, 8, 0, 0, tzinfo=timezone.utc)
+    states: dict[str, list[dict]] = {}
+
+    # Known pair 1: light.hallway -> light.kitchen (20/30 days, within 3 min)
+    hallway_records = []
+    kitchen_records = []
+    for day in range(30):
+        # hallway activates every day at 08:00 + slight jitter
+        h_on = base_time + timedelta(days=day, minutes=day % 5)
+        hallway_records.append({"last_changed": h_on.isoformat(), "state": "on"})
+        hallway_records.append({"last_changed": (h_on + timedelta(minutes=30)).isoformat(), "state": "off"})
+
+        # kitchen activates 2-3 min after hallway on 20 of 30 days (skip every 3rd day)
+        if day % 3 != 2:  # 20 out of 30 days (days 0,1,3,4,6,7,... — skip day 2,5,8,...)
+            k_on = h_on + timedelta(minutes=2 + (day % 2))  # 2 or 3 minutes later
+            kitchen_records.append({"last_changed": k_on.isoformat(), "state": "on"})
+            kitchen_records.append({"last_changed": (k_on + timedelta(minutes=20)).isoformat(), "state": "off"})
+
+    states["light.hallway"] = hallway_records
+    states["light.kitchen"] = kitchen_records
+
+    # Known pair 2: switch.door_sensor -> light.porch (25/30 days, within 1 min)
+    door_records = []
+    porch_records = []
+    for day in range(30):
+        # door_sensor activates every day at 18:00
+        d_on = base_time + timedelta(days=day, hours=10)
+        door_records.append({"last_changed": d_on.isoformat(), "state": "on"})
+        door_records.append({"last_changed": (d_on + timedelta(minutes=1)).isoformat(), "state": "off"})
+
+        # porch activates within 1 min on 25 of 30 days (skip every 6th day)
+        if day % 6 != 5:  # 25 out of 30 days
+            p_on = d_on + timedelta(seconds=30)
+            porch_records.append({"last_changed": p_on.isoformat(), "state": "on"})
+            porch_records.append({"last_changed": (p_on + timedelta(minutes=30)).isoformat(), "state": "off"})
+
+    states["switch.door_sensor"] = door_records
+    states["light.porch"] = porch_records
+
+    # 46 noise entities: random activations (seeded for reproducibility)
+    rng = random.Random(99)
+    for i in range(1, 47):
+        entity_id = f"light.noise_{i:03d}"
+        entity_records = []
+        for day in range(30):
+            # 0-3 random events per day
+            for _ in range(rng.randint(0, 3)):
+                hour = rng.randint(0, 23)
+                minute = rng.randint(0, 59)
+                on_time = base_time + timedelta(days=day, hours=hour, minutes=minute)
+                off_time = on_time + timedelta(minutes=rng.randint(5, 60))
+                entity_records.append({"last_changed": on_time.isoformat(), "state": "on"})
+                entity_records.append({"last_changed": off_time.isoformat(), "state": "off"})
+        states[entity_id] = entity_records
+
+    return states
+
+
 @pytest.fixture(scope="module")
 def states_with_mixed_types():
     """Fixture with both mock State objects and minimal dicts in the same list.

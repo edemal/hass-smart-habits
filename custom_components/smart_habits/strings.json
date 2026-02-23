@@ -23,11 +23,13 @@
         "description": "Adjust how Smart Habits analyses your history.",
         "data": {
           "lookback_days": "Lookback period (days)",
-          "analysis_interval": "Analysis interval (days)"
+          "analysis_interval": "Analysis interval (days)",
+          "sequence_window": "Sequence detection window (seconds)"
         },
         "data_description": {
           "lookback_days": "Number of days of Recorder history to use when detecting patterns.",
-          "analysis_interval": "How often to automatically re-analyse Recorder history for new patterns."
+          "analysis_interval": "How often to automatically re-analyse Recorder history for new patterns.",
+          "sequence_window": "Time window in seconds for detecting temporal sequences (Device A activates then Device B activates)."
         }
       }
     }

@@ -25,3 +25,8 @@ MIN_EVENTS_THRESHOLD = 5
 
 # Stale automation detection threshold (MGMT-03)
 STALE_AUTOMATION_DAYS = 30
+
+# Temporal sequence detection configuration
+CONF_SEQUENCE_WINDOW = "sequence_window"
+DEFAULT_SEQUENCE_WINDOW = 300  # seconds (5 minutes)
+SEQUENCE_WINDOW_OPTIONS = ["60", "120", "300", "600", "900"]

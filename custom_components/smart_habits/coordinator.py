@@ -12,9 +12,11 @@ from homeassistant.util import dt as dt_util
 from .const import (
     CONF_ANALYSIS_INTERVAL,
     CONF_LOOKBACK_DAYS,
+    CONF_SEQUENCE_WINDOW,
     DEFAULT_ANALYSIS_INTERVAL,
     DEFAULT_LOOKBACK_DAYS,
     DEFAULT_MIN_CONFIDENCE,
+    DEFAULT_SEQUENCE_WINDOW,
     DOMAIN,
     STALE_AUTOMATION_DAYS,
 )
@@ -59,6 +61,12 @@ class SmartHabitsCoordinator(DataUpdateCoordinator):
             )
         )
         self.min_confidence: float = DEFAULT_MIN_CONFIDENCE
+        self.sequence_window: int = int(
+            entry.options.get(
+                CONF_SEQUENCE_WINDOW,
+                entry.data.get(CONF_SEQUENCE_WINDOW, DEFAULT_SEQUENCE_WINDOW),
+            )
+        )
         self.dismissed_store = DismissedPatternsStore(hass)
 
     async def _async_setup(self) -> None:
@@ -98,7 +106,9 @@ class SmartHabitsCoordinator(DataUpdateCoordinator):
         # Filter dismissed patterns (MGMT-02)
         active_patterns = [
             p for p in patterns
-            if not self.dismissed_store.is_dismissed(p.entity_id, p.pattern_type, p.peak_hour)
+            if not self.dismissed_store.is_dismissed(
+                p.entity_id, p.pattern_type, p.peak_hour, p.secondary_entity_id
+            )
         ]
 
         # Detect stale automations from HA state machine (runs on event loop — no executor needed)

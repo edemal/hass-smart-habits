@@ -131,18 +131,19 @@ def test_full_module_structure() -> None:
 
 
 def test_coordinator_imports_detector() -> None:
-    """Verify coordinator.py imports DailyRoutineDetector from .pattern_detector.
+    """Verify coordinator.py imports DailyRoutineDetector from the detectors subpackage.
 
-    The import must use the exact relative package path so that HA's component
-    loader resolves it correctly at runtime.
+    Phase 4 moved DailyRoutineDetector into the detectors/ subpackage.
+    The import must use the new canonical path.
     """
     source = COORDINATOR_PATH.read_text(encoding="utf-8")
 
     assert "DailyRoutineDetector" in source, (
         "coordinator.py must reference DailyRoutineDetector"
     )
-    assert "from .pattern_detector import DailyRoutineDetector" in source, (
-        "coordinator.py must use: from .pattern_detector import DailyRoutineDetector"
+    assert "from .detectors import DailyRoutineDetector" in source, (
+        "coordinator.py must use: from .detectors import DailyRoutineDetector "
+        "(Phase 4: moved from .pattern_detector to .detectors subpackage)"
     )
 
 

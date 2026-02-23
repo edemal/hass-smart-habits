@@ -7,21 +7,21 @@ All models are pure Python dataclasses with no HA dependencies
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
 class DetectedPattern:
     """A single detected behavioral pattern with confidence scoring.
 
-    Produced by DailyRoutineDetector and consumed by:
+    Produced by DailyRoutineDetector or TemporalSequenceDetector and consumed by:
     - SmartHabitsCoordinator (stores in coordinator.data)
     - WebSocket API (Phase 3, serialized via dataclasses.asdict)
     - UI panel (Phase 5, displayed as pattern cards)
 
     Attributes:
         entity_id: The HA entity this pattern was observed on.
-        pattern_type: Category string, e.g. "daily_routine".
+        pattern_type: Category string, e.g. "daily_routine" or "temporal_sequence".
         peak_hour: Hour-of-day (0-23) where activity is highest.
         confidence: Fraction of days pattern was observed [0.0, 1.0].
             Computed as active_days / total_days (lookback window).
@@ -29,6 +29,8 @@ class DetectedPattern:
             "happened 8 of last 10 days" (PDET-05).
         active_days: Count of distinct calendar days the pattern fired.
         total_days: Total days in the analysis window (lookback_days).
+        secondary_entity_id: For temporal sequence patterns, the second entity
+            that follows the primary entity_id. None for daily_routine patterns.
     """
 
     entity_id: str
@@ -38,6 +40,7 @@ class DetectedPattern:
     evidence: str
     active_days: int
     total_days: int
+    secondary_entity_id: str | None = None
 
 
 @dataclass

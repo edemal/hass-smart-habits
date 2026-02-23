@@ -66,6 +66,7 @@ def ws_get_patterns(
     vol.Required("entity_id"): str,
     vol.Required("pattern_type"): str,
     vol.Required("peak_hour"): int,
+    vol.Optional("secondary_entity_id", default=None): vol.Any(str, None),
 })
 @async_response
 async def ws_dismiss_pattern(
@@ -77,6 +78,7 @@ async def ws_dismiss_pattern(
 
     Dismisses a pattern fingerprint persistently via DismissedPatternsStore (MGMT-01)
     and refreshes the coordinator so the change is reflected immediately (MGMT-02).
+    The optional secondary_entity_id supports temporal sequence pattern dismissal.
     """
     entries = hass.config_entries.async_entries("smart_habits")
     if not entries:
@@ -89,6 +91,7 @@ async def ws_dismiss_pattern(
         msg["entity_id"],
         msg["pattern_type"],
         msg["peak_hour"],
+        msg.get("secondary_entity_id"),
     )
     await coordinator.async_refresh()
 

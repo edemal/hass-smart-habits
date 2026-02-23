@@ -17,10 +17,13 @@ from .const import (
     ANALYSIS_INTERVAL_OPTIONS,
     CONF_ANALYSIS_INTERVAL,
     CONF_LOOKBACK_DAYS,
+    CONF_SEQUENCE_WINDOW,
     DEFAULT_ANALYSIS_INTERVAL,
     DEFAULT_LOOKBACK_DAYS,
+    DEFAULT_SEQUENCE_WINDOW,
     DOMAIN,
     LOOKBACK_OPTIONS,
+    SEQUENCE_WINDOW_OPTIONS,
 )
 
 
@@ -76,6 +79,7 @@ class SmartHabitsOptionsFlow(OptionsFlow):
                 data={
                     CONF_LOOKBACK_DAYS: int(user_input[CONF_LOOKBACK_DAYS]),
                     CONF_ANALYSIS_INTERVAL: int(user_input[CONF_ANALYSIS_INTERVAL]),
+                    CONF_SEQUENCE_WINDOW: int(user_input[CONF_SEQUENCE_WINDOW]),
                 }
             )
 
@@ -91,6 +95,12 @@ class SmartHabitsOptionsFlow(OptionsFlow):
                 self.config_entry.data.get(
                     CONF_ANALYSIS_INTERVAL, DEFAULT_ANALYSIS_INTERVAL
                 ),
+            )
+        )
+        current_window = str(
+            self.config_entry.options.get(
+                CONF_SEQUENCE_WINDOW,
+                self.config_entry.data.get(CONF_SEQUENCE_WINDOW, DEFAULT_SEQUENCE_WINDOW),
             )
         )
 
@@ -109,6 +119,14 @@ class SmartHabitsOptionsFlow(OptionsFlow):
                 ): SelectSelector(
                     SelectSelectorConfig(
                         options=ANALYSIS_INTERVAL_OPTIONS,
+                        mode=SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Required(
+                    CONF_SEQUENCE_WINDOW, default=current_window
+                ): SelectSelector(
+                    SelectSelectorConfig(
+                        options=SEQUENCE_WINDOW_OPTIONS,
                         mode=SelectSelectorMode.DROPDOWN,
                     )
                 ),

@@ -69,6 +69,11 @@ if "homeassistant" not in sys.modules:
     _ha_helpers_storage = _make_stub("homeassistant.helpers.storage")
     _ha_helpers_storage.Store = MagicMock  # type: ignore[attr-defined]
 
+    _ha_helpers_selector = _make_stub("homeassistant.helpers.selector")
+    _ha_helpers_selector.SelectSelector = MagicMock  # type: ignore[attr-defined]
+    _ha_helpers_selector.SelectSelectorConfig = MagicMock  # type: ignore[attr-defined]
+    _ha_helpers_selector.SelectSelectorMode = MagicMock  # type: ignore[attr-defined]
+
     _ha_components_ws = _make_stub("homeassistant.components.websocket_api")
     _ha_components_ws.async_register_command = MagicMock()  # type: ignore[attr-defined]
     _ha_components_ws.ActiveConnection = MagicMock  # type: ignore[attr-defined]
@@ -79,6 +84,8 @@ if "homeassistant" not in sys.modules:
     if "voluptuous" not in sys.modules:
         _vol = _make_stub("voluptuous")
         _vol.Required = MagicMock(return_value=MagicMock())  # type: ignore[attr-defined]
+        _vol.Optional = MagicMock(return_value=MagicMock())  # type: ignore[attr-defined]
+        _vol.Any = MagicMock(return_value=MagicMock())  # type: ignore[attr-defined]
 
 
 # ---------------------------------------------------------------------------

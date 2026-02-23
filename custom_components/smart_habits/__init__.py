@@ -9,8 +9,10 @@ from homeassistant.core import HomeAssistant
 from .const import (
     CONF_ANALYSIS_INTERVAL,
     CONF_LOOKBACK_DAYS,
+    CONF_SEQUENCE_WINDOW,
     DEFAULT_ANALYSIS_INTERVAL,
     DEFAULT_LOOKBACK_DAYS,
+    DEFAULT_SEQUENCE_WINDOW,
 )
 from .coordinator import SmartHabitsCoordinator
 from .websocket_api import async_register_commands
@@ -59,6 +61,9 @@ async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> Non
     )
     coordinator.update_interval = timedelta(
         days=int(entry.options.get(CONF_ANALYSIS_INTERVAL, DEFAULT_ANALYSIS_INTERVAL))
+    )
+    coordinator.sequence_window = int(
+        entry.options.get(CONF_SEQUENCE_WINDOW, DEFAULT_SEQUENCE_WINDOW)
     )
     await coordinator.async_refresh()
 

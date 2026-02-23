@@ -13,10 +13,10 @@ import time
 
 import pytest
 
-from custom_components.smart_habits.pattern_detector import (
+from custom_components.smart_habits.detectors import DailyRoutineDetector
+from custom_components.smart_habits.detectors._utils import (
     ACTIVE_STATES,
     SKIP_STATES,
-    DailyRoutineDetector,
 )
 from custom_components.smart_habits.models import DetectedPattern
 from custom_components.smart_habits.const import MIN_EVENTS_THRESHOLD

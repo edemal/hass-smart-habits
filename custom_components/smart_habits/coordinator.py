@@ -19,7 +19,7 @@ from .const import (
     STALE_AUTOMATION_DAYS,
 )
 from .models import StaleAutomation
-from .pattern_detector import DailyRoutineDetector
+from .detectors import DailyRoutineDetector
 from .recorder_reader import RecorderReader
 from .storage import DismissedPatternsStore
 

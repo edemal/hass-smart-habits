@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-02-23)
 ## Current Position
 
 Phase: 4 — Temporal Sequence Detector
-Plan: 1 of 2 complete
-Status: In Progress
-Last activity: 2026-02-23 — 04-01 complete: detectors/ subpackage + data model foundation
+Plan: 2 of 2 complete
+Status: Complete
+Last activity: 2026-02-23 — 04-02 complete: TemporalSequenceDetector implemented and wired into coordinator
 
 ```
 Progress: [░░░░░░░░░░░░░░░░░░░░] 0% (0/5 phases complete)
@@ -38,7 +38,7 @@ v1.0:     [████████████████████] 100% (3
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 4. Temporal Sequence Detector | 1/2 | 6 min | 6 min |
+| 4. Temporal Sequence Detector | 2/2 | 9 min | 4.5 min |
 
 ## Accumulated Context
 
@@ -48,6 +48,8 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - [Phase 04-temporal-sequence-detector]: detectors/ subpackage with backward-compat shim in pattern_detector.py for existing external imports
 - [Phase 04-temporal-sequence-detector]: secondary_entity_id field placed last in DetectedPattern dataclass to satisfy Python default-field ordering rules
 - [Phase 04-temporal-sequence-detector]: Storage v2 migration handled inline via d.get() fallback — no separate migration step, HA Store does not auto-migrate across versions
+- [Phase 04-temporal-sequence-detector]: peak_hour=0 as sentinel value for temporal_sequence patterns (sequence detection is not hour-based)
+- [Phase 04-temporal-sequence-detector]: Two-pointer scan for co-activation counting gives O(n+m) per pair vs O(n*m) naive nested loop
 
 ### Pending Todos
 
@@ -61,5 +63,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-23
-Stopped at: Completed 04-temporal-sequence-detector/04-01-PLAN.md
+Stopped at: Completed 04-temporal-sequence-detector/04-02-PLAN.md
 Resume file: None

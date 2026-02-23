@@ -9,7 +9,7 @@ Requirements for milestone v1.1 (Full Product). Each maps to roadmap phases.
 
 ### Detection
 
-- [ ] **PDET-09**: System detects temporal sequences where Device A activates and Device B activates within a configurable time window
+- [x] **PDET-09**: System detects temporal sequences where Device A activates and Device B activates within a configurable time window
 - [ ] **PDET-10**: System detects presence-based patterns where a person's arrival correlates with device activations within a time window
 - [x] **PDET-11**: User can configure the sequence detection time window (default 5 minutes) via options flow
 

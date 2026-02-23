@@ -30,7 +30,7 @@ See: `.planning/milestones/v1.0-ROADMAP.md` for full phase details.
 
 ### v1.1 Full Product
 
-- [ ] **Phase 4: Temporal Sequence Detector** - Sliding-window co-activation detector, detectors/ subpackage, DetectedPattern fingerprint extension
+- [x] **Phase 4: Temporal Sequence Detector** - Sliding-window co-activation detector, detectors/ subpackage, DetectedPattern fingerprint extension (completed 2026-02-23)
 - [ ] **Phase 5: Presence Pattern Detector** - Arrival-correlation detector with dwell-time filter, person.* domain preference
 - [ ] **Phase 6: Multi-Detector Coordinator + Acceptance Store** - All three detectors run in single executor job, AcceptedPatternsStore, coordinator filters accepted patterns
 - [ ] **Phase 7: Automation Creator + Accept WebSocket** - File-write + reload automation creation, accept/customize WS commands, human-readable preview
@@ -47,11 +47,11 @@ See: `.planning/milestones/v1.0-ROADMAP.md` for full phase details.
   2. The detector processes 50 entities over 30 days of history in under 10 seconds (Pi 4 performance bar)
   3. User can configure the detection time window (default 5 minutes) in the options flow, and the detector respects the configured value
   4. Existing dismissed patterns continue to work correctly after the DetectedPattern fingerprint is extended with secondary_entity_id and the storage version is bumped
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans executed
 
 Plans:
-- [ ] 04-01-PLAN.md — Structural refactor (detectors/ subpackage, model extension, storage v2, options flow, WS update)
-- [ ] 04-02-PLAN.md — TDD: TemporalSequenceDetector implementation + coordinator wiring
+- [x] 04-01-PLAN.md — Structural refactor (detectors/ subpackage, model extension, storage v2, options flow, WS update)
+- [x] 04-02-PLAN.md — TDD: TemporalSequenceDetector implementation + coordinator wiring
 
 ### Phase 5: Presence Pattern Detector
 **Goal**: The system detects presence-based patterns (a person arrives home and devices activate within a time window) and the detector is unit-tested in isolation with flap-noise fixtures
@@ -109,7 +109,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 1. Foundation | v1.0 | 3/3 | Complete | 2026-02-22 |
 | 2. Pattern Detection Engine | v1.0 | 2/2 | Complete | 2026-02-22 |
 | 3. Coordinator Wiring + Storage | v1.0 | 3/3 | Complete | 2026-02-22 |
-| 4. Temporal Sequence Detector | 1/2 | In Progress|  | - |
+| 4. Temporal Sequence Detector | v1.1 | 2/2 | Complete | 2026-02-23 |
 | 5. Presence Pattern Detector | v1.1 | 0/TBD | Not started | - |
 | 6. Multi-Detector Coordinator + Acceptance Store | v1.1 | 0/TBD | Not started | - |
 | 7. Automation Creator + Accept WebSocket | v1.1 | 0/TBD | Not started | - |

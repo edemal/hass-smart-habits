@@ -2,7 +2,12 @@
 
 ## Overview
 
-Build bottom-up: establish the HA integration scaffold and validated DB access layer first, then layer pattern detection, coordinator wiring, automation creation, and the full review panel on top. Each phase delivers a coherent, independently testable capability before the next begins. The core value — one-click automation creation from discovered habits — is complete at Phase 4. Phase 5 completes the review UX and adds the advanced detectors that make the product a true differentiator.
+Build bottom-up: establish the HA integration scaffold and validated DB access layer first, then layer pattern detection, coordinator wiring, automation creation, and the full review panel on top. Each phase delivers a coherent, independently testable capability before the next begins. The core value — one-click automation creation from discovered habits — is complete at Phase 7. Phase 8 completes the review UX with the dedicated sidebar panel.
+
+## Milestones
+
+- ✅ **v1.0 MVP Backend** — Phases 1-3 (shipped 2026-02-22)
+- 📋 **v1.1 Full Product** — Phases 4-8 (in progress)
 
 ## Phases
 
@@ -12,99 +17,100 @@ Build bottom-up: establish the HA integration scaffold and validated DB access l
 
 Decimal phases appear between their surrounding integers in numeric order.
 
+<details>
+<summary>✅ v1.0 MVP Backend (Phases 1-3) — SHIPPED 2026-02-22</summary>
+
 - [x] **Phase 1: Foundation** - HACS-compatible integration scaffold, Recorder DB access layer, async execution patterns, HAOS dependency validation (completed 2026-02-22)
 - [x] **Phase 2: Pattern Detection Engine** - Daily routine detector, confidence scoring, unit-tested against static fixtures, coordinator wired (completed 2026-02-22)
 - [x] **Phase 3: Coordinator Wiring + Storage** - PatternCoordinator, WebSocket API, persistent storage, panel skeleton (completed 2026-02-22)
-- [ ] **Phase 4: Automation Creation** - AutomationBuilder, accept-to-create flow, full core user journey complete
-- [ ] **Phase 5: Review Panel + Advanced Detectors** - Full LitElement sidebar panel, presence-based detection, temporal sequence detection
+
+See: `.planning/milestones/v1.0-ROADMAP.md` for full phase details.
+
+</details>
+
+### v1.1 Full Product
+
+- [ ] **Phase 4: Temporal Sequence Detector** - Sliding-window co-activation detector, detectors/ subpackage, DetectedPattern fingerprint extension
+- [ ] **Phase 5: Presence Pattern Detector** - Arrival-correlation detector with dwell-time filter, person.* domain preference
+- [ ] **Phase 6: Multi-Detector Coordinator + Acceptance Store** - All three detectors run in single executor job, AcceptedPatternsStore, coordinator filters accepted patterns
+- [ ] **Phase 7: Automation Creator + Accept WebSocket** - File-write + reload automation creation, accept/customize WS commands, human-readable preview
+- [ ] **Phase 8: Sidebar Panel** - LitElement web component, pattern cards with accept/dismiss/customize, stale automation list, category grouping
 
 ## Phase Details
 
-### Phase 1: Foundation
-**Goal**: A loadable HA custom integration with confirmed async patterns, working Recorder DB access, and validated HAOS dependency compatibility — so every phase above it builds on proven ground
-**Depends on**: Nothing (first phase)
-**Requirements**: INTG-01, INTG-02, INTG-03, PDET-06, PDET-08
+### Phase 4: Temporal Sequence Detector
+**Goal**: The system detects temporal sequences (Device A activates then Device B activates within a configurable window) and the detection code is fully unit-tested in isolation before any HA wiring
+**Depends on**: Phase 3 (detectors/ subpackage introduced here, but inherits v1.0 codebase)
+**Requirements**: PDET-09, PDET-11
 **Success Criteria** (what must be TRUE):
-  1. Integration installs and loads in Home Assistant via HACS without errors
-  2. Config flow completes and creates a config entry with lookback period selection (7/14/30/90 days)
-  3. RecorderReader queries the Recorder DB in an executor job and returns state rows scoped to the configured lookback window — no event loop blocking
-  4. scikit-learn and numpy install successfully on HAOS, or pure-Python fallback is confirmed and documented as the algorithm path
-  5. All processing runs locally — no network calls leave the HA instance
-**Plans:** 3/3 plans complete
+  1. Given historical state data where entity A turns on and entity B turns on within 5 minutes repeatedly, the detector surfaces a temporal sequence pattern with a confidence score
+  2. The detector processes 50 entities over 30 days of history in under 10 seconds (Pi 4 performance bar)
+  3. User can configure the detection time window (default 5 minutes) in the options flow, and the detector respects the configured value
+  4. Existing dismissed patterns continue to work correctly after the DetectedPattern fingerprint is extended with secondary_entity_id and the storage version is bumped
+**Plans:** 1/2 plans executed
 
 Plans:
-- [ ] 01-01-PLAN.md — Integration scaffold with config flow and HACS metadata
-- [ ] 01-02-PLAN.md — RecorderReader DB access layer and HAOS dependency validation
-- [ ] 01-03-PLAN.md — Coordinator wiring with background scan trigger
+- [ ] 04-01-PLAN.md — Structural refactor (detectors/ subpackage, model extension, storage v2, options flow, WS update)
+- [ ] 04-02-PLAN.md — TDD: TemporalSequenceDetector implementation + coordinator wiring
 
-### Phase 2: Pattern Detection Engine
-**Goal**: A tested daily routine detector that produces confidence-scored pattern objects from Recorder state data — pure Python, validated against real-shape fixtures, ready to wire into HA
-**Depends on**: Phase 1
-**Requirements**: PDET-01, PDET-02, PDET-05
+### Phase 5: Presence Pattern Detector
+**Goal**: The system detects presence-based patterns (a person arrives home and devices activate within a time window) and the detector is unit-tested in isolation with flap-noise fixtures
+**Depends on**: Phase 4 (detectors/ subpackage, fingerprint extension)
+**Requirements**: PDET-10
 **Success Criteria** (what must be TRUE):
-  1. User can trigger pattern analysis (manually or via coordinator) and receive a list of detected patterns
-  2. Each detected pattern includes a confidence score with human-readable evidence (e.g. "happened 8 of last 10 mornings")
-  3. DailyRoutineDetector correctly identifies a time-based routine from a 90-day fixture with 500 entities within 30 seconds on Pi 4 class hardware
-  4. Analysis runs in an executor job and does not block the HA event loop
-**Plans:** 2/2 plans complete
-
-Plans:
-- [x] 02-01-PLAN.md — DailyRoutineDetector with TDD: models, algorithm, test suite
-- [x] 02-02-PLAN.md — Coordinator wiring: connect detector to HA lifecycle
-
-### Phase 3: Coordinator Wiring + Storage
-**Goal**: The pattern detection engine is wired into HA's lifecycle — scheduled analysis, on-demand scans, persistent dismissed/accepted state, and a WebSocket API with a thin panel that proves the data contract end-to-end
-**Depends on**: Phase 2
-**Requirements**: PDET-07, MGMT-01, MGMT-02, MGMT-03
-**Audit Fixes** (from v1.0 audit):
-  - MC-01: Register `entry.add_update_listener` so options flow reconfiguration updates the running coordinator
-  - MC-02: Add `int()` cast in options flow `async_step_init` to match config flow behavior
-**Success Criteria** (what must be TRUE):
-  1. User can trigger a manual analysis scan from the integration and see updated results
-  2. Analysis runs automatically on the configured schedule without blocking HA startup
-  3. A dismissed pattern stays dismissed across HA restarts
-  4. Dismissing a pattern type reduces the frequency of similar suggestions in subsequent analysis runs
-  5. Stale automations (not triggered in 30+ days) are surfaced separately in the data the panel can display
-  6. Changing lookback period via options flow takes effect immediately without restart (MC-01/MC-02)
-**Plans:** 3/3 plans complete
-
-Plans:
-- [x] 03-01-PLAN.md — Configurable analysis schedule + MC-01/MC-02 audit fixes
-- [x] 03-02-PLAN.md — DismissedPatternsStore + StaleAutomation model
-- [x] 03-03-PLAN.md — Coordinator wiring + WebSocket API
-
-### Phase 4: Automation Creation
-**Goal**: A user can click accept on a suggestion and a real, working HA automation entity is created — the complete core value is delivered end-to-end
-**Depends on**: Phase 3
-**Requirements**: UI-02
-**Success Criteria** (what must be TRUE):
-  1. Accepting a suggestion creates a real HA automation entity visible in Settings > Automations
-  2. The created automation persists across HA restart
-  3. Accepting a suggestion that already has a corresponding automation does not create a duplicate
-  4. The accept flow updates the panel state (pattern moves from pending to accepted) without requiring a page reload
+  1. Given state history where a person entity transitions to "home" and lights turn on within the configured window, the detector surfaces a presence pattern with a confidence score
+  2. A person entity that transitions to "home" and back to "not_home" within 5 minutes (flap) is not counted as a genuine arrival
+  3. When no person.* entities exist in HA state, the detector falls back to device_tracker.* entities without error
+  4. The detector is independently unit-testable with static state fixtures requiring no live HA instance
 **Plans**: TBD
 
-### Phase 5: Review Panel + Advanced Detectors
-**Goal**: Users can review, preview, customize, and act on all pattern types through a polished sidebar panel — including presence-based and temporal sequence patterns that no competitor detects
-**Depends on**: Phase 4
-**Requirements**: UI-01, UI-03, UI-04, UI-05, PDET-03, PDET-04
+### Phase 6: Multi-Detector Coordinator + Acceptance Store
+**Goal**: All three detectors run together in a single background job, accepted patterns are persisted and filtered from the suggestion list, and the data model supports the automation creation flow in Phase 7
+**Depends on**: Phase 5 (all three detectors exist)
+**Requirements**: (none direct — enables AUTO-01, AUTO-02, AUTO-05 in Phase 7)
 **Success Criteria** (what must be TRUE):
-  1. Dedicated sidebar panel is accessible from the HA navigation and displays suggestions grouped by category (e.g. "Morning Routines", "Arrival Sequences")
-  2. User can preview any suggestion in plain language before accepting (e.g. "Turns on kitchen lights every weekday at 07:05")
-  3. User can edit the time, entities, or conditions of a suggestion before accepting it
-  4. System detects patterns where a person's arrival triggers device activation and surfaces them as suggestions
-  5. System detects temporal sequences (device A on → device B shortly after) and surfaces them as suggestions
+  1. After a coordinator refresh, coordinator.data contains patterns from all three detectors (daily routine, temporal sequence, presence) merged into a single list
+  2. Accepting a pattern via the new AcceptedPatternsStore removes it from the suggestion list returned by get_patterns
+  3. Accepted patterns persist across HA restart (coordinator.data["accepted_patterns"] survives config entry reload)
+  4. The coordinator runs all three detectors in a single executor job, not three separate jobs
+**Plans**: TBD
+
+### Phase 7: Automation Creator + Accept WebSocket
+**Goal**: A user can accept a pattern suggestion and a real HA automation entity is created, visible in Settings > Automations — the complete core value is delivered end-to-end
+**Depends on**: Phase 6 (AcceptedPatternsStore, merged detector output)
+**Requirements**: AUTO-01, AUTO-02, AUTO-03, AUTO-04, AUTO-05
+**Success Criteria** (what must be TRUE):
+  1. Accepting a pattern creates a real HA automation entity visible in Settings > Automations, and the automation persists after HA restart
+  2. Before accepting, the user sees a plain-language description of what the automation will do (e.g. "Turns on kitchen lights every weekday at 07:05")
+  3. The user can adjust the trigger time, entities, or conditions on a suggestion before accepting, and the created automation reflects the customized values
+  4. Accepting a pattern that already has a corresponding automation does not create a duplicate
+  5. If automations.yaml is not writable at runtime, the integration warns the user and surfaces the generated YAML for manual copy rather than silently failing
+**Plans**: TBD
+
+### Phase 8: Sidebar Panel
+**Goal**: Users can review, act on, and manage all pattern types from a dedicated sidebar panel — accept, dismiss, and customize suggestions without leaving the panel, with immediate visual feedback after every action
+**Depends on**: Phase 7 (all WebSocket commands stable and tested)
+**Requirements**: PANEL-01, PANEL-02, PANEL-03, PANEL-04, PANEL-05
+**Success Criteria** (what must be TRUE):
+  1. A dedicated sidebar panel is accessible from the HA navigation sidebar and displays pattern suggestions with confidence scores
+  2. User can accept, dismiss, or open a customize form for any suggestion directly from the panel — no page reload required after any action
+  3. Patterns are grouped by category ("Morning Routines", "Arrival Sequences", "Device Chains") within the panel
+  4. The panel displays the list of stale automations (those not fired in 30+ days) alongside pattern suggestions
+  5. Panel state updates immediately after accept or dismiss — the acted-on pattern disappears from the list without requiring a page reload
 **Plans**: TBD
 
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 
-| Phase | Plans Complete | Status | Completed |
-|-------|----------------|--------|-----------|
-| 1. Foundation | 3/3 | Complete   | 2026-02-22 |
-| 2. Pattern Detection Engine | 2/2 | Complete    | 2026-02-22 |
-| 3. Coordinator Wiring + Storage | 3/3 | Complete    | 2026-02-22 |
-| 4. Automation Creation | 0/TBD | Not started | - |
-| 5. Review Panel + Advanced Detectors | 0/TBD | Not started | - |
+| Phase | Milestone | Plans Complete | Status | Completed |
+|-------|-----------|----------------|--------|-----------|
+| 1. Foundation | v1.0 | 3/3 | Complete | 2026-02-22 |
+| 2. Pattern Detection Engine | v1.0 | 2/2 | Complete | 2026-02-22 |
+| 3. Coordinator Wiring + Storage | v1.0 | 3/3 | Complete | 2026-02-22 |
+| 4. Temporal Sequence Detector | 1/2 | In Progress|  | - |
+| 5. Presence Pattern Detector | v1.1 | 0/TBD | Not started | - |
+| 6. Multi-Detector Coordinator + Acceptance Store | v1.1 | 0/TBD | Not started | - |
+| 7. Automation Creator + Accept WebSocket | v1.1 | 0/TBD | Not started | - |
+| 8. Sidebar Panel | v1.1 | 0/TBD | Not started | - |

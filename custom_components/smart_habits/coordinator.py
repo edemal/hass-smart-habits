@@ -21,7 +21,7 @@ from .const import (
     STALE_AUTOMATION_DAYS,
 )
 from .models import StaleAutomation
-from .detectors import DailyRoutineDetector
+from .detectors import DailyRoutineDetector, TemporalSequenceDetector
 from .recorder_reader import RecorderReader
 from .storage import DismissedPatternsStore
 
@@ -103,9 +103,22 @@ class SmartHabitsCoordinator(DataUpdateCoordinator):
             detector.detect, states, self.lookback_days
         )
 
+        # Temporal sequence detection (Phase 4 — PDET-09)
+        seq_detector = TemporalSequenceDetector(
+            window_seconds=self.sequence_window,
+            min_confidence=self.min_confidence,
+        )
+        seq_patterns = await self.hass.async_add_executor_job(
+            seq_detector.detect, states, self.lookback_days
+        )
+
+        # Merge all patterns from both detectors
+        all_patterns = patterns + seq_patterns
+
         # Filter dismissed patterns (MGMT-02)
+        # secondary_entity_id is included in the fingerprint for temporal sequence dismissals
         active_patterns = [
-            p for p in patterns
+            p for p in all_patterns
             if not self.dismissed_store.is_dismissed(
                 p.entity_id, p.pattern_type, p.peak_hour, p.secondary_entity_id
             )
@@ -115,10 +128,13 @@ class SmartHabitsCoordinator(DataUpdateCoordinator):
         stale_automations = await self._async_detect_stale_automations()
 
         _LOGGER.info(
-            "Smart Habits: detected %d patterns (%d dismissed) from %d entities, %d stale automations",
+            "Smart Habits: detected %d patterns (%d dismissed) from %d entities "
+            "[%d daily_routine, %d temporal_sequence], %d stale automations",
             len(active_patterns),
-            len(patterns) - len(active_patterns),
+            len(all_patterns) - len(active_patterns),
             len(states),
+            len(patterns),
+            len(seq_patterns),
             len(stale_automations),
         )
         return {"patterns": active_patterns, "stale_automations": stale_automations}

@@ -212,11 +212,14 @@ def test_performance_50_entities_30_days(temporal_states_30d):
 def test_no_ha_imports():
     """Detector module must not import from homeassistant.*."""
     import inspect
+    import re
     import custom_components.smart_habits.detectors.temporal_sequence as mod
 
     src = inspect.getsource(mod)
-    assert "homeassistant" not in src, (
-        "Found 'homeassistant' import in temporal_sequence.py — module must be pure Python"
+    # Check for actual import statements only (not occurrences in comments/docstrings)
+    ha_imports = re.findall(r"^\s*(import|from)\s+homeassistant", src, re.MULTILINE)
+    assert len(ha_imports) == 0, (
+        f"Found homeassistant import statements in temporal_sequence.py: {ha_imports}"
     )
 
 

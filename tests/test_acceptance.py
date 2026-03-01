@@ -91,7 +91,13 @@ def test_register_commands_includes_accept():
 
 
 def test_register_commands_has_four_commands():
-    """async_register_commands must call async_register_command exactly 4 times."""
+    """async_register_commands must call async_register_command at least 4 times.
+
+    Updated for Plan 07-02: now 5 commands (ws_preview_automation added).
+    This test verifies the minimum count (4) for backward compatibility with
+    existing acceptance; test_register_commands_has_five_commands in
+    test_websocket.py verifies the exact 5-command count.
+    """
     tree = _get_tree()
     register_fn = _find_function(tree, "async_register_commands")
     assert register_fn is not None, "async_register_commands not found in AST"
@@ -106,8 +112,8 @@ def test_register_commands_has_four_commands():
             elif isinstance(func, ast.Name) and func.id == "async_register_command":
                 count += 1
 
-    assert count == 4, (
-        f"Expected 4 async_register_command calls in async_register_commands, found {count}"
+    assert count >= 4, (
+        f"Expected at least 4 async_register_command calls in async_register_commands, found {count}"
     )
 
 

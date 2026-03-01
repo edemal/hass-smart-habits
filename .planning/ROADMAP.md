@@ -33,7 +33,7 @@ See: `.planning/milestones/v1.0-ROADMAP.md` for full phase details.
 - [x] **Phase 4: Temporal Sequence Detector** - Sliding-window co-activation detector, detectors/ subpackage, DetectedPattern fingerprint extension (completed 2026-02-23)
 - [x] **Phase 5: Presence Pattern Detector** - Arrival-correlation detector with dwell-time filter, person.* domain preference (completed 2026-03-01)
 - [x] **Phase 6: Multi-Detector Coordinator + Acceptance Store** - All three detectors run in single executor job, AcceptedPatternsStore, coordinator filters accepted patterns (completed 2026-03-01)
-- [ ] **Phase 7: Automation Creator + Accept WebSocket** - File-write + reload automation creation, accept/customize WS commands, human-readable preview
+- [x] **Phase 7: Automation Creator + Accept WebSocket** - File-write + reload automation creation, accept/customize WS commands, human-readable preview (completed 2026-03-01)
 - [ ] **Phase 8: Sidebar Panel** - LitElement web component, pattern cards with accept/dismiss/customize, stale automation list, category grouping
 
 ## Phase Details
@@ -92,7 +92,7 @@ Plans:
   3. The user can adjust the trigger time, entities, or conditions on a suggestion before accepting, and the created automation reflects the customized values
   4. Accepting a pattern that already has a corresponding automation does not create a duplicate
   5. If automations.yaml is not writable at runtime, the integration warns the user and surfaces the generated YAML for manual copy rather than silently failing
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 07-01-PLAN.md — TDD: AutomationCreator class (YAML builder, file I/O, dedup, description generator)
@@ -123,5 +123,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 4. Temporal Sequence Detector | v1.1 | 2/2 | Complete | 2026-02-23 |
 | 5. Presence Pattern Detector | v1.1 | 1/1 | Complete | 2026-03-01 |
 | 6. Multi-Detector Coordinator + Acceptance Store | v1.1 | 2/2 | Complete | 2026-03-01 |
-| 7. Automation Creator + Accept WebSocket | 1/2 | In Progress|  | - |
+| 7. Automation Creator + Accept WebSocket | 2/2 | Complete   | 2026-03-01 | - |
 | 8. Sidebar Panel | v1.1 | 0/TBD | Not started | - |

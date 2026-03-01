@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Full Product
 status: unknown
-last_updated: "2026-03-01T19:43:58.827Z"
+last_updated: "2026-03-01T19:49:05.656Z"
 progress:
   total_phases: 4
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 7
-  completed_plans: 6
+  completed_plans: 7
 ---
 
 # Project State
@@ -23,9 +23,9 @@ See: .planning/PROJECT.md (updated 2026-02-23)
 ## Current Position
 
 Phase: 7 — Automation Creator + Accept WebSocket
-Plan: 1 of 2 complete
-Status: In Progress
-Last activity: 2026-03-01 — 07-01 complete: AutomationCreator class with TDD (MD5 IDs, YAML I/O, dedup, description generation)
+Plan: 2 of 2 complete
+Status: Complete
+Last activity: 2026-03-01 — 07-02 complete: ws_accept_pattern wired to AutomationCreator, ws_preview_automation added, 5-command registration, yaml_for_manual_copy fallback
 
 ```
 Progress: [████░░░░░░░░░░░░░░░░] 20% (1/5 phases complete)
@@ -56,6 +56,7 @@ v1.0:     [████████████████████] 100% (3
 | 6. Multi-Detector Coordinator + Acceptance Store | 1/1 | 3 min | 3 min |
 | Phase 06-multi-detector-coordinator-acceptance-store P02 | 2 | 1 tasks | 2 files |
 | Phase 07-automation-creator-accept-websocket P01 | 6 | 1 tasks | 3 files |
+| Phase 07-automation-creator-accept-websocket P02 | 3 | 1 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -77,6 +78,9 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - [Phase 06-multi-detector-coordinator-acceptance-store]: accepted_patterns key added to get_patterns response alongside patterns and stale_automations
 - [Phase 07-automation-creator-accept-websocket]: hashlib.md5 used for deterministic automation IDs — same pattern fingerprint always maps to same ID, enabling AUTO-05 dedup
 - [Phase 07-automation-creator-accept-websocket]: AutomationCreator.create_automation_sync must always be called via hass.async_add_executor_job; async_create_automation is the WS handler entry point
+- [Phase 07-automation-creator-accept-websocket]: AutomationCreator imported lazily inside handler body to prevent circular import between websocket_api.py and automation_creator.py
+- [Phase 07-automation-creator-accept-websocket]: ws_preview_automation uses @callback not @async_response — purely synchronous computation, no I/O
+- [Phase 07-automation-creator-accept-websocket]: accepted_store.async_accept called before AutomationCreator.async_create_automation — acceptance persisted even if file write fails
 
 ### Pending Todos
 
@@ -90,5 +94,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-01
-Stopped at: Completed 07-automation-creator-accept-websocket/07-01-PLAN.md
+Stopped at: Completed 07-automation-creator-accept-websocket/07-02-PLAN.md
 Resume file: None

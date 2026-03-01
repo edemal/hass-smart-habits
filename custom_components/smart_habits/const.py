@@ -30,3 +30,6 @@ STALE_AUTOMATION_DAYS = 30
 CONF_SEQUENCE_WINDOW = "sequence_window"
 DEFAULT_SEQUENCE_WINDOW = 300  # seconds (5 minutes)
 SEQUENCE_WINDOW_OPTIONS = ["60", "120", "300", "600", "900"]
+
+# Automation creation prefix for deterministic IDs (AUTO-05)
+AUTOMATION_ID_PREFIX = "smart_habits_"

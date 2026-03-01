@@ -21,7 +21,7 @@ from .const import (
     STALE_AUTOMATION_DAYS,
 )
 from .models import StaleAutomation
-from .detectors import DailyRoutineDetector, TemporalSequenceDetector
+from .detectors import DailyRoutineDetector, PresencePatternDetector, TemporalSequenceDetector
 from .recorder_reader import RecorderReader
 from .storage import DismissedPatternsStore
 
@@ -112,8 +112,17 @@ class SmartHabitsCoordinator(DataUpdateCoordinator):
             seq_detector.detect, states, self.lookback_days
         )
 
-        # Merge all patterns from both detectors
-        all_patterns = patterns + seq_patterns
+        # Presence pattern detection (Phase 5 — PDET-10)
+        presence_detector = PresencePatternDetector(
+            window_seconds=self.sequence_window,
+            min_confidence=self.min_confidence,
+        )
+        presence_patterns = await self.hass.async_add_executor_job(
+            presence_detector.detect, states, self.lookback_days
+        )
+
+        # Merge all patterns from all three detectors
+        all_patterns = patterns + seq_patterns + presence_patterns
 
         # Filter dismissed patterns (MGMT-02)
         # secondary_entity_id is included in the fingerprint for temporal sequence dismissals
@@ -129,12 +138,13 @@ class SmartHabitsCoordinator(DataUpdateCoordinator):
 
         _LOGGER.info(
             "Smart Habits: detected %d patterns (%d dismissed) from %d entities "
-            "[%d daily_routine, %d temporal_sequence], %d stale automations",
+            "[%d daily_routine, %d temporal_sequence, %d presence_arrival], %d stale automations",
             len(active_patterns),
             len(all_patterns) - len(active_patterns),
             len(states),
             len(patterns),
             len(seq_patterns),
+            len(presence_patterns),
             len(stale_automations),
         )
         return {"patterns": active_patterns, "stale_automations": stale_automations}

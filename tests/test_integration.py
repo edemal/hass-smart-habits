@@ -453,15 +453,18 @@ def test_coordinator_merges_all_detectors() -> None:
     # Build minimal mock hass
     mock_hass = MagicMock()
 
-    # Create coordinator without calling __init__ fully by patching Store and DataUpdateCoordinator
+    # Create coordinator without calling __init__ fully by patching Store and DataUpdateCoordinator.
+    # Use object.__setattr__ to set attributes on the bare instance since the MagicMock-based
+    # DataUpdateCoordinator stub may block normal attribute assignment.
     with (
         patch("custom_components.smart_habits.coordinator.DismissedPatternsStore"),
         patch("custom_components.smart_habits.coordinator.AcceptedPatternsStore"),
     ):
         coordinator = SmartHabitsCoordinator.__new__(SmartHabitsCoordinator)
-        coordinator.hass = mock_hass
-        coordinator.min_confidence = 0.6
-        coordinator.sequence_window = 300
+
+    object.__setattr__(coordinator, "hass", mock_hass)
+    object.__setattr__(coordinator, "min_confidence", 0.6)
+    object.__setattr__(coordinator, "sequence_window", 300)
 
     # Create one fake pattern per detector type
     pattern_daily = DetectedPattern(

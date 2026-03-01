@@ -23,7 +23,7 @@ from .const import (
 from .models import StaleAutomation
 from .detectors import DailyRoutineDetector, PresencePatternDetector, TemporalSequenceDetector
 from .recorder_reader import RecorderReader
-from .storage import DismissedPatternsStore
+from .storage import DismissedPatternsStore, AcceptedPatternsStore
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -68,6 +68,7 @@ class SmartHabitsCoordinator(DataUpdateCoordinator):
             )
         )
         self.dismissed_store = DismissedPatternsStore(hass)
+        self.accepted_store = AcceptedPatternsStore(hass)
 
     async def _async_setup(self) -> None:
         """Set up the coordinator.
@@ -77,58 +78,81 @@ class SmartHabitsCoordinator(DataUpdateCoordinator):
         are filtered from the very first _async_update_data call.
         """
         await self.dismissed_store.async_load()
+        await self.accepted_store.async_load()
         _LOGGER.debug("Smart Habits coordinator initialized")
+
+    def _run_all_detectors(
+        self, states: dict, lookback_days: int
+    ) -> list:
+        """Run all three detectors synchronously and return merged pattern list.
+
+        Intended to be called via hass.async_add_executor_job (generic executor)
+        so it does not block the event loop. Runs under GIL — safe to read
+        self.min_confidence and self.sequence_window without locks (RESEARCH
+        pitfall 3: read-only attributes set before executor call).
+
+        Returns a merged list of DetectedPattern objects from all three detectors.
+        """
+        daily_detector = DailyRoutineDetector(min_confidence=self.min_confidence)
+        daily_patterns = daily_detector.detect(states, lookback_days)
+
+        seq_detector = TemporalSequenceDetector(
+            window_seconds=self.sequence_window,
+            min_confidence=self.min_confidence,
+        )
+        seq_patterns = seq_detector.detect(states, lookback_days)
+
+        presence_detector = PresencePatternDetector(
+            window_seconds=self.sequence_window,
+            min_confidence=self.min_confidence,
+        )
+        presence_patterns = presence_detector.detect(states, lookback_days)
+
+        return daily_patterns + seq_patterns + presence_patterns
 
     async def _async_update_data(self) -> dict:
         """Fetch state history from Recorder and run pattern detection.
 
         DB I/O runs inside RecorderReader via the recorder's dedicated executor.
         CPU-bound detection runs via hass.async_add_executor_job (generic executor)
-        so it does not block the event loop or contend with Recorder DB threads.
-        Dismissed patterns are filtered (MGMT-02) and stale automations are detected
-        from the HA state machine (MGMT-03, no Recorder query needed).
+        as a single _run_all_detectors call to avoid multiple round-trips through
+        the executor queue (Phase 6 consolidation).
+        Dismissed patterns are filtered (MGMT-02), accepted patterns are separated
+        (Phase 6), and stale automations are detected from the HA state machine
+        (MGMT-03, no Recorder query needed).
         """
         entity_ids = self.reader.get_analyzable_entity_ids()
         if not entity_ids:
             _LOGGER.warning("Smart Habits: no analyzable entities — skipping scan")
             stale_automations = await self._async_detect_stale_automations()
-            return {"patterns": [], "stale_automations": stale_automations}
+            return {"patterns": [], "accepted_patterns": [], "stale_automations": stale_automations}
 
         # DB I/O: uses recorder's dedicated executor (inside RecorderReader)
         states = await self.reader.async_get_states(entity_ids, self.lookback_days)
 
-        # CPU analysis: use generic executor (NOT recorder executor — that is for DB I/O only)
-        detector = DailyRoutineDetector(min_confidence=self.min_confidence)
-        patterns = await self.hass.async_add_executor_job(
-            detector.detect, states, self.lookback_days
+        # CPU analysis: single executor job runs all three detectors (Phase 6)
+        all_patterns = await self.hass.async_add_executor_job(
+            self._run_all_detectors, states, self.lookback_days
         )
-
-        # Temporal sequence detection (Phase 4 — PDET-09)
-        seq_detector = TemporalSequenceDetector(
-            window_seconds=self.sequence_window,
-            min_confidence=self.min_confidence,
-        )
-        seq_patterns = await self.hass.async_add_executor_job(
-            seq_detector.detect, states, self.lookback_days
-        )
-
-        # Presence pattern detection (Phase 5 — PDET-10)
-        presence_detector = PresencePatternDetector(
-            window_seconds=self.sequence_window,
-            min_confidence=self.min_confidence,
-        )
-        presence_patterns = await self.hass.async_add_executor_job(
-            presence_detector.detect, states, self.lookback_days
-        )
-
-        # Merge all patterns from all three detectors
-        all_patterns = patterns + seq_patterns + presence_patterns
 
         # Filter dismissed patterns (MGMT-02)
-        # secondary_entity_id is included in the fingerprint for temporal sequence dismissals
-        active_patterns = [
+        dismissed_filtered = [
             p for p in all_patterns
             if not self.dismissed_store.is_dismissed(
+                p.entity_id, p.pattern_type, p.peak_hour, p.secondary_entity_id
+            )
+        ]
+
+        # Separate accepted vs active patterns (Phase 6)
+        active_patterns = [
+            p for p in dismissed_filtered
+            if not self.accepted_store.is_accepted(
+                p.entity_id, p.pattern_type, p.peak_hour, p.secondary_entity_id
+            )
+        ]
+        accepted_patterns = [
+            p for p in dismissed_filtered
+            if self.accepted_store.is_accepted(
                 p.entity_id, p.pattern_type, p.peak_hour, p.secondary_entity_id
             )
         ]
@@ -137,17 +161,15 @@ class SmartHabitsCoordinator(DataUpdateCoordinator):
         stale_automations = await self._async_detect_stale_automations()
 
         _LOGGER.info(
-            "Smart Habits: detected %d patterns (%d dismissed) from %d entities "
-            "[%d daily_routine, %d temporal_sequence, %d presence_arrival], %d stale automations",
+            "Smart Habits: detected %d patterns (%d dismissed, %d accepted) from %d entities, "
+            "%d stale automations",
             len(active_patterns),
-            len(all_patterns) - len(active_patterns),
+            len(all_patterns) - len(dismissed_filtered),
+            len(accepted_patterns),
             len(states),
-            len(patterns),
-            len(seq_patterns),
-            len(presence_patterns),
             len(stale_automations),
         )
-        return {"patterns": active_patterns, "stale_automations": stale_automations}
+        return {"patterns": active_patterns, "accepted_patterns": accepted_patterns, "stale_automations": stale_automations}
 
     async def _async_detect_stale_automations(self) -> list[StaleAutomation]:
         """Detect automations that have not been triggered recently.

@@ -1,7 +1,8 @@
-"""Persistent storage for dismissed pattern fingerprints.
+"""Persistent storage for dismissed and accepted pattern fingerprints.
 
-Uses homeassistant.helpers.storage.Store to write dismissed state as JSON
-to .storage/smart_habits.dismissed.json, surviving HA restarts (MGMT-01).
+Uses homeassistant.helpers.storage.Store to write state as JSON to
+.storage/smart_habits.dismissed.json and .storage/smart_habits.accepted.json,
+surviving HA restarts (MGMT-01).
 
 Storage v2 adds secondary_entity_id to the 4-element fingerprint tuple to
 support temporal sequence patterns. V1 data (missing secondary_entity_id)
@@ -99,3 +100,85 @@ class DismissedPatternsStore:
     def dismissed_count(self) -> int:
         """Number of dismissed pattern fingerprints."""
         return len(self._dismissed)
+
+
+ACCEPTED_STORAGE_KEY = "smart_habits.accepted"
+ACCEPTED_STORAGE_VERSION = 1
+
+
+class AcceptedPatternsStore:
+    """Persists the set of accepted pattern fingerprints across HA restarts.
+
+    Mirrors DismissedPatternsStore exactly. Used by Phase 7 (automation creation)
+    to track which patterns the user has accepted for automation creation.
+
+    Storage format v1:
+    {
+        "accepted": [
+            {
+                "entity_id": "light.bedroom",
+                "pattern_type": "daily_routine",
+                "peak_hour": 7,
+                "secondary_entity_id": null
+            },
+            ...
+        ]
+    }
+    """
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        """Initialize with a Store backed by .storage/smart_habits.accepted.json."""
+        self._store = Store(hass, ACCEPTED_STORAGE_VERSION, ACCEPTED_STORAGE_KEY)
+        self._accepted: set[tuple[str, str, int, str | None]] = set()
+
+    async def async_load(self) -> None:
+        """Load accepted patterns from persistent storage."""
+        data = await self._store.async_load()
+        if data and "accepted" in data:
+            self._accepted = {
+                (
+                    d["entity_id"],
+                    d["pattern_type"],
+                    d["peak_hour"],
+                    d.get("secondary_entity_id", None),
+                )
+                for d in data["accepted"]
+            }
+        _LOGGER.debug("Smart Habits: loaded %d accepted patterns", len(self._accepted))
+
+    async def async_accept(
+        self,
+        entity_id: str,
+        pattern_type: str,
+        peak_hour: int,
+        secondary_entity_id: str | None = None,
+    ) -> None:
+        """Accept a pattern and persist immediately."""
+        key = (entity_id, pattern_type, peak_hour, secondary_entity_id)
+        self._accepted.add(key)
+        await self._store.async_save({
+            "accepted": [
+                {
+                    "entity_id": k[0],
+                    "pattern_type": k[1],
+                    "peak_hour": k[2],
+                    "secondary_entity_id": k[3],
+                }
+                for k in self._accepted
+            ]
+        })
+
+    def is_accepted(
+        self,
+        entity_id: str,
+        pattern_type: str,
+        peak_hour: int,
+        secondary_entity_id: str | None = None,
+    ) -> bool:
+        """Check if a pattern fingerprint has been accepted."""
+        return (entity_id, pattern_type, peak_hour, secondary_entity_id) in self._accepted
+
+    @property
+    def accepted_count(self) -> int:
+        """Number of accepted pattern fingerprints."""
+        return len(self._accepted)

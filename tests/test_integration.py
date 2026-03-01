@@ -320,3 +320,205 @@ def test_coordinator_reads_options_first() -> None:
         "coordinator.py must read entry.options.get() first (with entry.data fallback) "
         "for configurable fields — ensures options always override initial config data"
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 6 Plan 01: Single executor job, AcceptedPatternsStore, accepted filtering
+# ---------------------------------------------------------------------------
+
+
+def test_coordinator_uses_single_executor_job() -> None:
+    """Verify _async_update_data contains exactly one async_add_executor_job call.
+
+    Phase 6 consolidates three separate executor jobs (one per detector) into
+    a single _run_all_detectors call. Exactly 1 call must appear in the body
+    of _async_update_data.
+    """
+    source = COORDINATOR_PATH.read_text(encoding="utf-8")
+    tree = ast.parse(source)
+
+    # Find _async_update_data and count async_add_executor_job calls in its body
+    update_data_node = None
+    for node in ast.walk(tree):
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "_async_update_data":
+            update_data_node = node
+            break
+
+    assert update_data_node is not None, (
+        "coordinator.py must define _async_update_data"
+    )
+
+    # Count async_add_executor_job attribute accesses in the function body
+    executor_call_count = sum(
+        1
+        for child in ast.walk(update_data_node)
+        if isinstance(child, ast.Attribute) and child.attr == "async_add_executor_job"
+    )
+
+    assert executor_call_count == 1, (
+        f"_async_update_data must contain exactly 1 async_add_executor_job call, "
+        f"found {executor_call_count}. Phase 6 consolidates three calls into one "
+        "_run_all_detectors call."
+    )
+
+
+def test_coordinator_has_run_all_detectors() -> None:
+    """Verify coordinator.py defines a _run_all_detectors method."""
+    source = COORDINATOR_PATH.read_text(encoding="utf-8")
+    tree = ast.parse(source)
+
+    method_names = {
+        node.name
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+
+    assert "_run_all_detectors" in method_names, (
+        "coordinator.py must define _run_all_detectors method "
+        "(Phase 6: consolidates three detectors into one executor call)"
+    )
+
+
+def test_coordinator_imports_accepted_store() -> None:
+    """Verify coordinator.py imports AcceptedPatternsStore from .storage."""
+    source = COORDINATOR_PATH.read_text(encoding="utf-8")
+
+    assert "AcceptedPatternsStore" in source, (
+        "coordinator.py must reference AcceptedPatternsStore"
+    )
+
+    # Find the storage import line and verify AcceptedPatternsStore is on it
+    storage_import_lines = [
+        line for line in source.splitlines()
+        if "from .storage import" in line
+    ]
+    assert any("AcceptedPatternsStore" in line for line in storage_import_lines), (
+        "coordinator.py must import AcceptedPatternsStore via 'from .storage import ...'"
+    )
+
+
+def test_coordinator_returns_accepted_patterns_key() -> None:
+    """Verify _async_update_data return statements include 'accepted_patterns' key.
+
+    Both the early-return path (no entity_ids) and the main return path must
+    include accepted_patterns in the returned dict.
+    """
+    source = COORDINATOR_PATH.read_text(encoding="utf-8")
+    tree = ast.parse(source)
+
+    update_data_node = None
+    for node in ast.walk(tree):
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "_async_update_data":
+            update_data_node = node
+            break
+
+    assert update_data_node is not None, "coordinator.py must define _async_update_data"
+
+    # Collect all return statement sources within the function
+    return_srcs = []
+    for child in ast.walk(update_data_node):
+        if isinstance(child, ast.Return) and child.value is not None:
+            return_srcs.append(ast.unparse(child.value))
+
+    assert len(return_srcs) >= 2, (
+        "_async_update_data should have at least 2 return paths "
+        "(early return + main return)"
+    )
+
+    assert all("accepted_patterns" in s for s in return_srcs), (
+        "All return paths in _async_update_data must include 'accepted_patterns' key. "
+        f"Returns found: {return_srcs}"
+    )
+
+
+def test_coordinator_merges_all_detectors() -> None:
+    """Behavioral merge test (SC-1): _run_all_detectors returns patterns from all three detectors.
+
+    Instantiates SmartHabitsCoordinator with mocked dependencies. Patches all
+    three detector classes so each .detect() returns a pattern with a distinct
+    pattern_type. Calls _run_all_detectors directly and asserts the merged result
+    covers all three types.
+
+    This test catches any implementation that silently drops a detector's output.
+    """
+    from unittest.mock import MagicMock, patch
+    from custom_components.smart_habits.coordinator import SmartHabitsCoordinator
+    from custom_components.smart_habits.models import DetectedPattern
+
+    # Build minimal mock entry
+    mock_entry = MagicMock()
+    mock_entry.options = {}
+    mock_entry.data = {}
+
+    # Build minimal mock hass
+    mock_hass = MagicMock()
+
+    # Create coordinator without calling __init__ fully by patching Store and DataUpdateCoordinator
+    with (
+        patch("custom_components.smart_habits.coordinator.DismissedPatternsStore"),
+        patch("custom_components.smart_habits.coordinator.AcceptedPatternsStore"),
+    ):
+        coordinator = SmartHabitsCoordinator.__new__(SmartHabitsCoordinator)
+        coordinator.hass = mock_hass
+        coordinator.min_confidence = 0.6
+        coordinator.sequence_window = 300
+
+    # Create one fake pattern per detector type
+    pattern_daily = DetectedPattern(
+        entity_id="light.bedroom",
+        pattern_type="daily_routine",
+        peak_hour=7,
+        confidence=0.9,
+        evidence="test",
+        active_days=27,
+        total_days=30,
+    )
+    pattern_sequence = DetectedPattern(
+        entity_id="light.hallway",
+        pattern_type="temporal_sequence",
+        peak_hour=0,
+        confidence=0.8,
+        evidence="test",
+        active_days=20,
+        total_days=30,
+        secondary_entity_id="light.kitchen",
+    )
+    pattern_presence = DetectedPattern(
+        entity_id="person.alice",
+        pattern_type="presence_arrival",
+        peak_hour=0,
+        confidence=0.85,
+        evidence="test",
+        active_days=25,
+        total_days=30,
+        secondary_entity_id="light.living_room",
+    )
+
+    daily_mock = MagicMock()
+    daily_mock.detect.return_value = [pattern_daily]
+
+    seq_mock = MagicMock()
+    seq_mock.detect.return_value = [pattern_sequence]
+
+    presence_mock = MagicMock()
+    presence_mock.detect.return_value = [pattern_presence]
+
+    states: dict = {"light.bedroom": [], "light.hallway": [], "person.alice": []}
+    lookback_days = 30
+
+    with (
+        patch("custom_components.smart_habits.coordinator.DailyRoutineDetector", return_value=daily_mock),
+        patch("custom_components.smart_habits.coordinator.TemporalSequenceDetector", return_value=seq_mock),
+        patch("custom_components.smart_habits.coordinator.PresencePatternDetector", return_value=presence_mock),
+    ):
+        result = coordinator._run_all_detectors(states, lookback_days)
+
+    assert len(result) >= 3, (
+        f"_run_all_detectors must return at least 3 patterns (one per detector type), got {len(result)}"
+    )
+    types_found = {p.pattern_type for p in result}
+    expected_types = {"daily_routine", "temporal_sequence", "presence_arrival"}
+    assert expected_types.issubset(types_found), (
+        f"_run_all_detectors must return patterns covering all three types. "
+        f"Expected {expected_types}, got {types_found}"
+    )

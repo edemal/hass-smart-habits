@@ -7,11 +7,15 @@ Phase 1/2 test style.
 v2 migration tests verify:
 - V1 data (without secondary_entity_id) loads correctly with None as 4th element
 - 4-element fingerprints are distinct (entity+type+hour+secondary_entity_id)
+
+Phase 6 additions:
+- AcceptedPatternsStore mirrors DismissedPatternsStore
+- ACCEPTED_STORAGE_KEY = "smart_habits.accepted", ACCEPTED_STORAGE_VERSION = 1
 """
 import ast
 import asyncio
 import os
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
 STORAGE_PATH = os.path.join(
@@ -178,4 +182,122 @@ def test_secondary_entity_id_creates_distinct_fingerprint():
     )
     assert not store.is_dismissed("light.bedroom", "daily_routine", 7), (
         "Pattern without secondary_entity_id should NOT be dismissed (defaults to None, distinct)"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 6: AcceptedPatternsStore tests
+# ---------------------------------------------------------------------------
+
+
+def _make_accepted_store_instance(data=None):
+    """Create an AcceptedPatternsStore with a mocked _store.async_load.
+
+    Mirrors _make_store_instance exactly, but uses AcceptedPatternsStore.
+    """
+    from custom_components.smart_habits.storage import AcceptedPatternsStore
+
+    mock_inner_store = MagicMock()
+    mock_inner_store.async_load = AsyncMock(return_value=data)
+    mock_inner_store.async_save = AsyncMock(return_value=None)
+
+    mock_store_class = MagicMock(return_value=mock_inner_store)
+
+    with patch("custom_components.smart_habits.storage.Store", mock_store_class):
+        mock_hass = MagicMock(spec=[])
+        store = AcceptedPatternsStore(mock_hass)
+
+    return store
+
+
+def test_accepted_storage_key_is_namespaced():
+    """ACCEPTED_STORAGE_KEY must be 'smart_habits.accepted'."""
+    source = _get_source()
+    assert '"smart_habits.accepted"' in source or "'smart_habits.accepted'" in source, (
+        "ACCEPTED_STORAGE_KEY must be 'smart_habits.accepted'"
+    )
+
+
+def test_accepted_storage_version_is_1():
+    """ACCEPTED_STORAGE_VERSION must be 1 (new store, starts at 1)."""
+    source = _get_source()
+    assert "ACCEPTED_STORAGE_VERSION = 1" in source, (
+        "ACCEPTED_STORAGE_VERSION must be 1"
+    )
+
+
+def test_accepted_store_has_required_methods():
+    """AcceptedPatternsStore must define async_load, async_accept, and is_accepted."""
+    tree = _get_tree()
+    cls = _get_class_node(tree, "AcceptedPatternsStore")
+    assert cls is not None, "AcceptedPatternsStore class not found in storage.py"
+
+    method_names = {
+        node.name
+        for node in ast.walk(cls)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    required = {"async_load", "async_accept", "is_accepted"}
+    missing = required - method_names
+    assert not missing, f"AcceptedPatternsStore missing methods: {missing}"
+
+
+def test_accepted_accept_is_async():
+    """async_accept must be an AsyncFunctionDef — it must await Store.async_save."""
+    tree = _get_tree()
+    cls = _get_class_node(tree, "AcceptedPatternsStore")
+    assert cls is not None, "AcceptedPatternsStore class not found in storage.py"
+
+    async_accept_node = None
+    for node in ast.walk(cls):
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "async_accept":
+            async_accept_node = node
+            break
+
+    assert async_accept_node is not None, (
+        "async_accept must be an AsyncFunctionDef (needs to await Store.async_save)"
+    )
+
+
+def test_accepted_pattern_persist_and_check():
+    """Accept a pattern, assert is_accepted returns True; different fingerprint returns False."""
+    store = _make_accepted_store_instance(None)
+
+    asyncio.run(store.async_load())
+    asyncio.run(store.async_accept("light.bedroom", "daily_routine", 7))
+
+    assert store.is_accepted("light.bedroom", "daily_routine", 7), (
+        "Accepted pattern fingerprint should return True from is_accepted"
+    )
+    assert not store.is_accepted("light.bedroom", "daily_routine", 8), (
+        "Different peak_hour should NOT be accepted (distinct fingerprint)"
+    )
+    assert not store.is_accepted("light.kitchen", "daily_routine", 7), (
+        "Different entity_id should NOT be accepted (distinct fingerprint)"
+    )
+
+
+def test_accepted_secondary_entity_id_distinct():
+    """Accept with secondary_entity_id creates a distinct fingerprint from None."""
+    store = _make_accepted_store_instance(None)
+
+    asyncio.run(store.async_load())
+    asyncio.run(store.async_accept("light.bedroom", "temporal_sequence", 0, "light.kitchen"))
+
+    assert store.is_accepted("light.bedroom", "temporal_sequence", 0, "light.kitchen"), (
+        "Pattern accepted with secondary_entity_id='light.kitchen' should be accepted"
+    )
+    assert not store.is_accepted("light.bedroom", "temporal_sequence", 0, None), (
+        "Pattern with secondary_entity_id=None should NOT be accepted (distinct fingerprint)"
+    )
+
+
+def test_accepted_empty_store_load():
+    """Loading with None data (empty store) does not error and accepted_count == 0."""
+    store = _make_accepted_store_instance(None)
+
+    asyncio.run(store.async_load())
+
+    assert store.accepted_count == 0, (
+        "Empty store load should result in accepted_count == 0"
     )

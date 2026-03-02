@@ -128,4 +128,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 5. Presence Pattern Detector | v1.1 | 1/1 | Complete | 2026-03-01 |
 | 6. Multi-Detector Coordinator + Acceptance Store | v1.1 | 2/2 | Complete | 2026-03-01 |
 | 7. Automation Creator + Accept WebSocket | 2/2 | Complete   | 2026-03-01 | - |
-| 8. Sidebar Panel | 2/2 | Complete   | 2026-03-02 | - |
+| 8. Sidebar Panel | 2/2 | Complete    | 2026-03-02 | - |

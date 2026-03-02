@@ -34,7 +34,7 @@ See: `.planning/milestones/v1.0-ROADMAP.md` for full phase details.
 - [x] **Phase 5: Presence Pattern Detector** - Arrival-correlation detector with dwell-time filter, person.* domain preference (completed 2026-03-01)
 - [x] **Phase 6: Multi-Detector Coordinator + Acceptance Store** - All three detectors run in single executor job, AcceptedPatternsStore, coordinator filters accepted patterns (completed 2026-03-01)
 - [x] **Phase 7: Automation Creator + Accept WebSocket** - File-write + reload automation creation, accept/customize WS commands, human-readable preview (completed 2026-03-01)
-- [ ] **Phase 8: Sidebar Panel** - LitElement web component, pattern cards with accept/dismiss/customize, stale automation list, category grouping
+- [x] **Phase 8: Sidebar Panel** - LitElement web component, pattern cards with accept/dismiss/customize, stale automation list, category grouping (completed 2026-03-02)
 
 ## Phase Details
 
@@ -108,7 +108,7 @@ Plans:
   3. Patterns are grouped by category ("Morning Routines", "Arrival Sequences", "Device Chains") within the panel
   4. The panel displays the list of stale automations (those not fired in 30+ days) alongside pattern suggestions
   5. Panel state updates immediately after accept or dismiss — the acted-on pattern disappears from the list without requiring a page reload
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 08-01-PLAN.md — Panel registration infrastructure (Python + manifest + JS stub + tests)
@@ -128,4 +128,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 5. Presence Pattern Detector | v1.1 | 1/1 | Complete | 2026-03-01 |
 | 6. Multi-Detector Coordinator + Acceptance Store | v1.1 | 2/2 | Complete | 2026-03-01 |
 | 7. Automation Creator + Accept WebSocket | 2/2 | Complete   | 2026-03-01 | - |
-| 8. Sidebar Panel | 1/2 | In Progress|  | - |
+| 8. Sidebar Panel | 2/2 | Complete   | 2026-03-02 | - |

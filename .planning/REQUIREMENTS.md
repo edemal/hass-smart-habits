@@ -24,10 +24,10 @@ Requirements for milestone v1.1 (Full Product). Each maps to roadmap phases.
 ### Panel
 
 - [x] **PANEL-01**: Dedicated sidebar panel accessible from HA navigation displays pattern suggestions with confidence scores
-- [ ] **PANEL-02**: User can accept, dismiss, or customize suggestions directly from the panel
-- [ ] **PANEL-03**: Patterns are grouped by category (e.g. "Morning Routines", "Arrival Sequences", "Device Chains")
-- [ ] **PANEL-04**: Panel displays stale automations that haven't fired recently
-- [ ] **PANEL-05**: Panel state updates immediately after accept/dismiss actions without requiring page reload
+- [x] **PANEL-02**: User can accept, dismiss, or customize suggestions directly from the panel
+- [x] **PANEL-03**: Patterns are grouped by category (e.g. "Morning Routines", "Arrival Sequences", "Device Chains")
+- [x] **PANEL-04**: Panel displays stale automations that haven't fired recently
+- [x] **PANEL-05**: Panel state updates immediately after accept/dismiss actions without requiring page reload
 
 ## v2 Requirements
 
@@ -77,10 +77,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | AUTO-04 | Phase 7 | Complete |
 | AUTO-05 | Phase 7 | Complete |
 | PANEL-01 | Phase 8 | Complete |
-| PANEL-02 | Phase 8 | Pending |
-| PANEL-03 | Phase 8 | Pending |
-| PANEL-04 | Phase 8 | Pending |
-| PANEL-05 | Phase 8 | Pending |
+| PANEL-02 | Phase 8 | Complete |
+| PANEL-03 | Phase 8 | Complete |
+| PANEL-04 | Phase 8 | Complete |
+| PANEL-05 | Phase 8 | Complete |
 
 **Coverage:**
 - v1.1 requirements: 13 total

@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Full Product
 status: unknown
-last_updated: "2026-03-02T08:23:56.716Z"
+last_updated: "2026-03-02T08:27:39.268Z"
 progress:
   total_phases: 5
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 9
-  completed_plans: 8
+  completed_plans: 9
 ---
 
 # Project State
@@ -23,13 +23,14 @@ See: .planning/PROJECT.md (updated 2026-02-23)
 ## Current Position
 
 Phase: 8 — Sidebar Panel
-Plan: 1 of 2 complete
-Status: In Progress
-Last activity: 2026-03-02 — 08-01 complete: panel_custom registration in async_setup_entry, StaticPathConfig serving frontend/, smart-habits-panel.js stub, manifest.json dependencies, 6 tests passing
+Plan: 2 of 2 complete
+Status: Complete
+Last activity: 2026-03-02 — 08-02 complete: full SmartHabitsPanel web component (442 lines), pattern cards grouped by category, optimistic accept/dismiss, customize flow, stale automations section, all HA CSS vars, 138 tests passing
 
 ```
-Progress: [████░░░░░░░░░░░░░░░░] 20% (1/5 phases complete, phase 8 in progress)
+Progress: [████████████████████] 100% (5/5 phases complete, v1.1 milestone complete)
 v1.0:     [████████████████████] 100% (3/3 phases complete, shipped)
+v1.1:     [████████████████████] 100% (5/5 phases complete, shipped)
 ```
 
 ## Performance Metrics
@@ -58,6 +59,7 @@ v1.0:     [████████████████████] 100% (3
 | Phase 07-automation-creator-accept-websocket P01 | 6 | 1 tasks | 3 files |
 | Phase 07-automation-creator-accept-websocket P02 | 3 | 1 tasks | 3 files |
 | Phase 08-sidebar-panel P01 | 3 | 1 tasks | 5 files |
+| Phase 08-sidebar-panel P02 | 1 | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -84,6 +86,7 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - [Phase 07-automation-creator-accept-websocket]: accepted_store.async_accept called before AutomationCreator.async_create_automation — acceptance persisted even if file write fails
 - [Phase 08-sidebar-panel]: cache_headers=False used for StaticPathConfig — prevents stale panel JS during development
 - [Phase 08-sidebar-panel]: Duplicate registration guard: hass.data['frontend_panels'] dict check + try/except around async_register_panel; frontend.async_remove_panel in async_unload_entry for clean reload
+- [Phase 08-sidebar-panel]: innerHTML + _attachEventListeners() pattern for single-file component without bundler; _escapeHtml added for XSS prevention; input event on hour field for responsive UX without re-render
 
 ### Pending Todos
 
@@ -97,5 +100,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-02
-Stopped at: Completed 08-sidebar-panel/08-01-PLAN.md
+Stopped at: Completed 08-sidebar-panel/08-02-PLAN.md
 Resume file: None

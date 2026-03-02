@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Full Product
 status: unknown
-last_updated: "2026-03-02T08:52:38.274Z"
+last_updated: "2026-03-02T09:13:30.320Z"
 progress:
-  total_phases: 6
+  total_phases: 7
   completed_phases: 6
-  total_plans: 10
-  completed_plans: 10
+  total_plans: 12
+  completed_plans: 11
 ---
 
 # Project State
@@ -22,15 +22,16 @@ See: .planning/PROJECT.md (updated 2026-02-23)
 
 ## Current Position
 
-Phase: 9 — README Documentation
-Plan: 1 of 1 complete
-Status: Complete
-Last activity: 2026-03-02 — 09-01 complete: comprehensive README.md (195 lines) covering installation (HACS + manual), all three pattern types, config options, usage workflow, how it works, troubleshooting FAQ
+Phase: 10 — Add Integration and Device Type Filters for Pattern Exclusion
+Plan: 1 of 2 complete
+Status: In Progress
+Last activity: 2026-03-02 — 10-01 complete: filter constants, options flow multi-select fields (integration + domain), strings, and coordinator propagation wired end-to-end
 
 ```
-Progress: [████████████████████] 100% (5/5 phases complete, v1.1 milestone complete)
+Progress: [██████████████████░░] 92% (11/12 plans complete)
 v1.0:     [████████████████████] 100% (3/3 phases complete, shipped)
 v1.1:     [████████████████████] 100% (5/5 phases complete, shipped)
+v1.2:     [░░░░░░░░░░░░░░░░░░░░] 50% (Phase 10: 1/2 plans done)
 ```
 
 ## Performance Metrics
@@ -61,11 +62,13 @@ v1.1:     [████████████████████] 100% (5
 | Phase 08-sidebar-panel P01 | 3 | 1 tasks | 5 files |
 | Phase 08-sidebar-panel P02 | 1 | 1 tasks | 1 files |
 | Phase 09-readme-documentation P01 | 3 | 1 tasks | 1 files |
+| Phase 10-add-integration-and-device-type-filters-for-pattern-exclusion P01 | 2 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
 ### Roadmap Evolution
 - Phase 9 added: README documentation
+- Phase 10 added: Add integration and device type filters for pattern exclusion
 
 ### Decisions
 
@@ -92,6 +95,8 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - [Phase 08-sidebar-panel]: Duplicate registration guard: hass.data['frontend_panels'] dict check + try/except around async_register_panel; frontend.async_remove_panel in async_unload_entry for clean reload
 - [Phase 08-sidebar-panel]: innerHTML + _attachEventListeners() pattern for single-file component without bundler; _escapeHtml added for XSS prevention; input event on hour field for responsive UX without re-render
 - [Phase 09-readme-documentation]: Text-only README (no screenshots) — avoids placeholder content, visuals can be added later when UI is polished
+- [Phase 10-add-integration-and-device-type-filters-for-pattern-exclusion]: vol.Optional for filter fields so existing config entries without these fields upgrade gracefully
+- [Phase 10-add-integration-and-device-type-filters-for-pattern-exclusion]: Dynamic integration list built at options flow init time from entity registry to reflect current HA state
 
 ### Pending Todos
 
@@ -105,5 +110,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-02
-Stopped at: Completed 09-readme-documentation/09-01-PLAN.md
+Stopped at: Completed 10-add-integration-and-device-type-filters-for-pattern-exclusion/10-01-PLAN.md
 Resume file: None

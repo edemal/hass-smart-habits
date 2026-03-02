@@ -145,7 +145,7 @@ Plans:
 **Goal:** Users can exclude specific integrations (e.g. roborock) and entity types (e.g. binary_sensor) from pattern analysis via the options flow, and the coordinator filters out matching patterns before surfacing suggestions
 **Requirements**: None (enhancement, no formal requirement IDs)
 **Depends on:** Phase 9
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 10-01-PLAN.md — Constants, options flow multi-select fields, strings, options propagation

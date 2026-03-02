@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Full Product
 status: unknown
-last_updated: "2026-03-02T09:13:30.320Z"
+last_updated: "2026-03-02T09:16:17Z"
 progress:
   total_phases: 7
-  completed_phases: 6
+  completed_phases: 7
   total_plans: 12
-  completed_plans: 11
+  completed_plans: 12
 ---
 
 # Project State
@@ -23,15 +23,15 @@ See: .planning/PROJECT.md (updated 2026-02-23)
 ## Current Position
 
 Phase: 10 — Add Integration and Device Type Filters for Pattern Exclusion
-Plan: 1 of 2 complete
-Status: In Progress
-Last activity: 2026-03-02 — 10-01 complete: filter constants, options flow multi-select fields (integration + domain), strings, and coordinator propagation wired end-to-end
+Plan: 2 of 2 complete
+Status: Complete
+Last activity: 2026-03-02 — 10-02 complete: _is_pattern_excluded method, exclusion filter in _async_update_data, 9 TDD unit tests covering all exclusion scenarios
 
 ```
-Progress: [██████████████████░░] 92% (11/12 plans complete)
+Progress: [████████████████████] 100% (12/12 plans complete)
 v1.0:     [████████████████████] 100% (3/3 phases complete, shipped)
 v1.1:     [████████████████████] 100% (5/5 phases complete, shipped)
-v1.2:     [░░░░░░░░░░░░░░░░░░░░] 50% (Phase 10: 1/2 plans done)
+v1.2:     [████████████████████] 100% (Phase 10: 2/2 plans done)
 ```
 
 ## Performance Metrics
@@ -63,6 +63,7 @@ v1.2:     [░░░░░░░░░░░░░░░░░░░░] 50% (Ph
 | Phase 08-sidebar-panel P02 | 1 | 1 tasks | 1 files |
 | Phase 09-readme-documentation P01 | 3 | 1 tasks | 1 files |
 | Phase 10-add-integration-and-device-type-filters-for-pattern-exclusion P01 | 2 | 2 tasks | 4 files |
+| Phase 10-add-integration-and-device-type-filters-for-pattern-exclusion P02 | 2 | 1 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -97,6 +98,8 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - [Phase 09-readme-documentation]: Text-only README (no screenshots) — avoids placeholder content, visuals can be added later when UI is polished
 - [Phase 10-add-integration-and-device-type-filters-for-pattern-exclusion]: vol.Optional for filter fields so existing config entries without these fields upgrade gracefully
 - [Phase 10-add-integration-and-device-type-filters-for-pattern-exclusion]: Dynamic integration list built at options flow init time from entity registry to reflect current HA state
+- [Phase 10-add-integration-and-device-type-filters-for-pattern-exclusion]: Registry obtained once in _async_update_data and passed to _is_pattern_excluded to avoid repeated er.async_get(hass) calls per pattern
+- [Phase 10-add-integration-and-device-type-filters-for-pattern-exclusion]: Unregistered entities (registry returns None) are NOT excluded — avoids false-positive filtering for non-registry entities
 
 ### Pending Todos
 
@@ -110,5 +113,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-02
-Stopped at: Completed 10-add-integration-and-device-type-filters-for-pattern-exclusion/10-01-PLAN.md
+Stopped at: Completed 10-add-integration-and-device-type-filters-for-pattern-exclusion/10-02-PLAN.md — Phase 10 and all plans complete
 Resume file: None

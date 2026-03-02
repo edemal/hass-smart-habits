@@ -18,12 +18,12 @@ Requirements for milestone v1.1 (Full Product). Each maps to roadmap phases.
 - [x] **AUTO-01**: User can accept a pattern suggestion and a real HA automation entity is created, visible in Settings > Automations
 - [x] **AUTO-02**: Created automation persists across HA restart
 - [x] **AUTO-03**: User sees a human-readable preview of the automation before accepting (e.g. "Turns on kitchen lights every weekday at 07:05")
-- [ ] **AUTO-04**: User can customize trigger time, entities, or conditions before accepting a suggestion
+- [x] **AUTO-04**: User can customize trigger time, entities, or conditions before accepting a suggestion
 - [x] **AUTO-05**: Accepting a pattern that already has a corresponding automation does not create a duplicate
 
 ### Panel
 
-- [ ] **PANEL-01**: Dedicated sidebar panel accessible from HA navigation displays pattern suggestions with confidence scores
+- [x] **PANEL-01**: Dedicated sidebar panel accessible from HA navigation displays pattern suggestions with confidence scores
 - [ ] **PANEL-02**: User can accept, dismiss, or customize suggestions directly from the panel
 - [ ] **PANEL-03**: Patterns are grouped by category (e.g. "Morning Routines", "Arrival Sequences", "Device Chains")
 - [ ] **PANEL-04**: Panel displays stale automations that haven't fired recently
@@ -74,9 +74,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | AUTO-01 | Phase 7 | Complete |
 | AUTO-02 | Phase 7 | Complete |
 | AUTO-03 | Phase 7 | Complete |
-| AUTO-04 | Phase 7 | Pending |
+| AUTO-04 | Phase 7 | Complete |
 | AUTO-05 | Phase 7 | Complete |
-| PANEL-01 | Phase 8 | Pending |
+| PANEL-01 | Phase 8 | Complete |
 | PANEL-02 | Phase 8 | Pending |
 | PANEL-03 | Phase 8 | Pending |
 | PANEL-04 | Phase 8 | Pending |

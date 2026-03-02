@@ -108,7 +108,7 @@ Plans:
   3. Patterns are grouped by category ("Morning Routines", "Arrival Sequences", "Device Chains") within the panel
   4. The panel displays the list of stale automations (those not fired in 30+ days) alongside pattern suggestions
   5. Panel state updates immediately after accept or dismiss — the acted-on pattern disappears from the list without requiring a page reload
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Plans:
 - [ ] 08-01-PLAN.md — Panel registration infrastructure (Python + manifest + JS stub + tests)
@@ -128,4 +128,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 5. Presence Pattern Detector | v1.1 | 1/1 | Complete | 2026-03-01 |
 | 6. Multi-Detector Coordinator + Acceptance Store | v1.1 | 2/2 | Complete | 2026-03-01 |
 | 7. Automation Creator + Accept WebSocket | 2/2 | Complete   | 2026-03-01 | - |
-| 8. Sidebar Panel | v1.1 | 0/2 | Not started | - |
+| 8. Sidebar Panel | 1/2 | In Progress|  | - |

@@ -24,12 +24,16 @@
         "data": {
           "lookback_days": "Lookback period (days)",
           "analysis_interval": "Analysis interval (days)",
-          "sequence_window": "Sequence detection window (seconds)"
+          "sequence_window": "Sequence detection window (seconds)",
+          "excluded_integrations": "Exclude integrations",
+          "excluded_domains": "Exclude entity types"
         },
         "data_description": {
           "lookback_days": "Number of days of Recorder history to use when detecting patterns.",
           "analysis_interval": "How often to automatically re-analyse Recorder history for new patterns.",
-          "sequence_window": "Time window in seconds for detecting temporal sequences (Device A activates then Device B activates)."
+          "sequence_window": "Time window in seconds for detecting temporal sequences (Device A activates then Device B activates).",
+          "excluded_integrations": "Patterns involving entities from selected integrations will be hidden from suggestions.",
+          "excluded_domains": "Patterns involving entities of selected types (e.g. binary_sensor) will be hidden from suggestions."
         }
       }
     }

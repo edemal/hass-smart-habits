@@ -33,3 +33,10 @@ SEQUENCE_WINDOW_OPTIONS = ["60", "120", "300", "600", "900"]
 
 # Automation creation prefix for deterministic IDs (AUTO-05)
 AUTOMATION_ID_PREFIX = "smart_habits_"
+
+# Exclusion filters for pattern detection
+CONF_EXCLUDED_INTEGRATIONS = "excluded_integrations"
+DEFAULT_EXCLUDED_INTEGRATIONS: list[str] = []
+
+CONF_EXCLUDED_DOMAINS = "excluded_domains"
+DEFAULT_EXCLUDED_DOMAINS: list[str] = []

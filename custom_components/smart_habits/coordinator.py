@@ -6,14 +6,19 @@ from datetime import datetime, timedelta, timezone
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_ANALYSIS_INTERVAL,
+    CONF_EXCLUDED_DOMAINS,
+    CONF_EXCLUDED_INTEGRATIONS,
     CONF_LOOKBACK_DAYS,
     CONF_SEQUENCE_WINDOW,
     DEFAULT_ANALYSIS_INTERVAL,
+    DEFAULT_EXCLUDED_DOMAINS,
+    DEFAULT_EXCLUDED_INTEGRATIONS,
     DEFAULT_LOOKBACK_DAYS,
     DEFAULT_MIN_CONFIDENCE,
     DEFAULT_SEQUENCE_WINDOW,
@@ -69,6 +74,12 @@ class SmartHabitsCoordinator(DataUpdateCoordinator):
         )
         self.dismissed_store = DismissedPatternsStore(hass)
         self.accepted_store = AcceptedPatternsStore(hass)
+        self.excluded_integrations: list[str] = list(
+            entry.options.get(CONF_EXCLUDED_INTEGRATIONS, DEFAULT_EXCLUDED_INTEGRATIONS)
+        )
+        self.excluded_domains: list[str] = list(
+            entry.options.get(CONF_EXCLUDED_DOMAINS, DEFAULT_EXCLUDED_DOMAINS)
+        )
 
     async def _async_setup(self) -> None:
         """Set up the coordinator.
@@ -110,6 +121,35 @@ class SmartHabitsCoordinator(DataUpdateCoordinator):
 
         return daily_patterns + seq_patterns + presence_patterns
 
+    def _is_pattern_excluded(
+        self,
+        registry: er.EntityRegistry,
+        pattern,
+        excluded_integrations: list[str],
+        excluded_domains: list[str],
+    ) -> bool:
+        """Return True if pattern involves any excluded integration or domain.
+
+        Domain check uses the entity_id prefix (fast, no registry lookup).
+        Integration check uses registry.async_get — skipped when excluded_integrations
+        is empty. Unregistered entities (registry returns None) are NOT excluded.
+        """
+        entity_ids_to_check = [pattern.entity_id]
+        if pattern.secondary_entity_id:
+            entity_ids_to_check.append(pattern.secondary_entity_id)
+
+        for eid in entity_ids_to_check:
+            # Domain (device type) check — fast, no registry needed
+            if eid.split(".")[0] in excluded_domains:
+                return True
+            # Integration check — registry lookup (only if filter is configured)
+            if excluded_integrations:
+                entry = registry.async_get(eid)
+                if entry is not None and entry.platform in excluded_integrations:
+                    return True
+
+        return False
+
     async def _async_update_data(self) -> dict:
         """Fetch state history from Recorder and run pattern detection.
 
@@ -134,6 +174,18 @@ class SmartHabitsCoordinator(DataUpdateCoordinator):
         all_patterns = await self.hass.async_add_executor_job(
             self._run_all_detectors, states, self.lookback_days
         )
+
+        # Apply exclusion filters (Phase 10) — before dismissed/accepted split
+        excluded_integrations = self.excluded_integrations
+        excluded_domains = self.excluded_domains
+        if excluded_integrations or excluded_domains:
+            registry = er.async_get(self.hass)
+            all_patterns = [
+                p for p in all_patterns
+                if not self._is_pattern_excluded(
+                    registry, p, excluded_integrations, excluded_domains
+                )
+            ]
 
         # Filter dismissed patterns (MGMT-02)
         dismissed_filtered = [

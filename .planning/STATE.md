@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Full Product
 status: unknown
-last_updated: "2026-03-02T08:30:57.842Z"
+last_updated: "2026-03-02T08:51:49.246Z"
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 9
-  completed_plans: 9
+  total_phases: 6
+  completed_phases: 6
+  total_plans: 10
+  completed_plans: 10
 ---
 
 # Project State
@@ -22,10 +22,10 @@ See: .planning/PROJECT.md (updated 2026-02-23)
 
 ## Current Position
 
-Phase: 8 — Sidebar Panel
-Plan: 2 of 2 complete
+Phase: 9 — README Documentation
+Plan: 1 of 1 complete
 Status: Complete
-Last activity: 2026-03-02 — 08-02 complete: full SmartHabitsPanel web component (442 lines), pattern cards grouped by category, optimistic accept/dismiss, customize flow, stale automations section, all HA CSS vars, 138 tests passing
+Last activity: 2026-03-02 — 09-01 complete: comprehensive README.md (195 lines) covering installation (HACS + manual), all three pattern types, config options, usage workflow, how it works, troubleshooting FAQ
 
 ```
 Progress: [████████████████████] 100% (5/5 phases complete, v1.1 milestone complete)
@@ -60,8 +60,12 @@ v1.1:     [████████████████████] 100% (5
 | Phase 07-automation-creator-accept-websocket P02 | 3 | 1 tasks | 3 files |
 | Phase 08-sidebar-panel P01 | 3 | 1 tasks | 5 files |
 | Phase 08-sidebar-panel P02 | 1 | 1 tasks | 1 files |
+| Phase 09-readme-documentation P01 | 3 | 1 tasks | 1 files |
 
 ## Accumulated Context
+
+### Roadmap Evolution
+- Phase 9 added: README documentation
 
 ### Decisions
 
@@ -87,6 +91,7 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - [Phase 08-sidebar-panel]: cache_headers=False used for StaticPathConfig — prevents stale panel JS during development
 - [Phase 08-sidebar-panel]: Duplicate registration guard: hass.data['frontend_panels'] dict check + try/except around async_register_panel; frontend.async_remove_panel in async_unload_entry for clean reload
 - [Phase 08-sidebar-panel]: innerHTML + _attachEventListeners() pattern for single-file component without bundler; _escapeHtml added for XSS prevention; input event on hour field for responsive UX without re-render
+- [Phase 09-readme-documentation]: Text-only README (no screenshots) — avoids placeholder content, visuals can be added later when UI is polished
 
 ### Pending Todos
 
@@ -100,5 +105,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-02
-Stopped at: Completed 08-sidebar-panel/08-02-PLAN.md
+Stopped at: Completed 09-readme-documentation/09-01-PLAN.md
 Resume file: None

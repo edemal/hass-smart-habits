@@ -129,3 +129,13 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 6. Multi-Detector Coordinator + Acceptance Store | v1.1 | 2/2 | Complete | 2026-03-01 |
 | 7. Automation Creator + Accept WebSocket | 2/2 | Complete   | 2026-03-01 | - |
 | 8. Sidebar Panel | 2/2 | Complete    | 2026-03-02 | - |
+
+### Phase 9: README documentation
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 8
+**Plans:** 1/1 plans complete
+
+Plans:
+- [x] TBD (run /gsd:plan-phase 9 to break down) (completed 2026-03-02)

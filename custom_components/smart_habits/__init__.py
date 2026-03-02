@@ -1,8 +1,13 @@
 """Smart Habits integration for Home Assistant."""
 from __future__ import annotations
 
+import logging
+import os
 from datetime import timedelta
 
+from homeassistant.components import frontend
+from homeassistant.components.http import StaticPathConfig
+from homeassistant.components.panel_custom import async_register_panel as _async_register_panel
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
@@ -16,6 +21,11 @@ from .const import (
 )
 from .coordinator import SmartHabitsCoordinator
 from .websocket_api import async_register_commands
+
+_LOGGER = logging.getLogger(__name__)
+
+PANEL_URL_BASE = "/smart_habits_frontend"
+PANEL_WEBCOMPONENT = "smart-habits-panel"
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -44,6 +54,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         coordinator.async_trigger_scan(),
         name="smart_habits_initial_scan",
     )
+
+    # Register frontend panel
+    frontend_path = os.path.join(os.path.dirname(__file__), "frontend")
+    await hass.http.async_register_static_paths([
+        StaticPathConfig(PANEL_URL_BASE, frontend_path, cache_headers=False)
+    ])
+    if "smart_habits" not in hass.data.get("frontend_panels", {}):
+        try:
+            await _async_register_panel(
+                hass,
+                webcomponent_name=PANEL_WEBCOMPONENT,
+                frontend_url_path="smart_habits",
+                sidebar_title="Smart Habits",
+                sidebar_icon="mdi:brain",
+                module_url=f"{PANEL_URL_BASE}/smart-habits-panel.js",
+                embed_iframe=False,
+                require_admin=False,
+            )
+        except Exception:
+            _LOGGER.warning("Smart Habits: panel registration failed (panel may already be registered)")
 
     return True
 
@@ -74,5 +104,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     No platforms to unload. Background tasks are automatically cancelled
     by HA via the entry lifecycle when async_create_background_task is used.
     The options update listener is deregistered via entry.async_on_unload.
+    Removes the sidebar panel so re-setup is clean (prevents duplicate registration).
     """
+    frontend.async_remove_panel(hass, "smart_habits")
     return True

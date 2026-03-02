@@ -80,6 +80,24 @@ if "homeassistant" not in sys.modules:
     _ha_components_ws.async_response = lambda f: f  # type: ignore[attr-defined]
     _ha_components_ws.websocket_command = lambda schema: (lambda f: f)  # type: ignore[attr-defined]
 
+    # Panel registration stubs (used in __init__.py for sidebar panel)
+    _ha_components_http = _make_stub("homeassistant.components.http")
+
+    class _StaticPathConfig:
+        """Minimal stub for homeassistant.components.http.StaticPathConfig."""
+        def __init__(self, url_path: str, path: str, cache_headers: bool = True):
+            self.url_path = url_path
+            self.path = path
+            self.cache_headers = cache_headers
+
+    _ha_components_http.StaticPathConfig = _StaticPathConfig  # type: ignore[attr-defined]
+
+    _ha_components_frontend = _make_stub("homeassistant.components.frontend")
+    _ha_components_frontend.async_remove_panel = MagicMock()  # type: ignore[attr-defined]
+
+    _ha_components_panel = _make_stub("homeassistant.components.panel_custom")
+    _ha_components_panel.async_register_panel = MagicMock()  # type: ignore[attr-defined]
+
     # voluptuous is used in websocket_api.py for schema validation
     if "voluptuous" not in sys.modules:
         _vol = _make_stub("voluptuous")

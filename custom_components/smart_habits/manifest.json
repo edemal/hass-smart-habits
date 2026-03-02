@@ -7,6 +7,7 @@
   "integration_type": "service",
   "iot_class": "local_polling",
   "after_dependencies": ["recorder"],
+  "dependencies": ["http", "frontend", "panel_custom"],
   "codeowners": [],
   "documentation": "https://github.com/",
   "issue_tracker": "https://github.com/",

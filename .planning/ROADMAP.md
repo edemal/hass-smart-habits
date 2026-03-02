@@ -139,3 +139,14 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 
 Plans:
 - [x] TBD (run /gsd:plan-phase 9 to break down) (completed 2026-03-02)
+
+### Phase 10: Add integration and device type filters for pattern exclusion
+
+**Goal:** Users can exclude specific integrations (e.g. roborock) and entity types (e.g. binary_sensor) from pattern analysis via the options flow, and the coordinator filters out matching patterns before surfacing suggestions
+**Requirements**: None (enhancement, no formal requirement IDs)
+**Depends on:** Phase 9
+**Plans:** 2 plans
+
+Plans:
+- [ ] 10-01-PLAN.md — Constants, options flow multi-select fields, strings, options propagation
+- [ ] 10-02-PLAN.md — TDD: Coordinator exclusion filter logic + unit tests

@@ -13,9 +13,13 @@ from homeassistant.core import HomeAssistant
 
 from .const import (
     CONF_ANALYSIS_INTERVAL,
+    CONF_EXCLUDED_DOMAINS,
+    CONF_EXCLUDED_INTEGRATIONS,
     CONF_LOOKBACK_DAYS,
     CONF_SEQUENCE_WINDOW,
     DEFAULT_ANALYSIS_INTERVAL,
+    DEFAULT_EXCLUDED_DOMAINS,
+    DEFAULT_EXCLUDED_INTEGRATIONS,
     DEFAULT_LOOKBACK_DAYS,
     DEFAULT_SEQUENCE_WINDOW,
 )
@@ -94,6 +98,12 @@ async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> Non
     )
     coordinator.sequence_window = int(
         entry.options.get(CONF_SEQUENCE_WINDOW, DEFAULT_SEQUENCE_WINDOW)
+    )
+    coordinator.excluded_integrations = list(
+        entry.options.get(CONF_EXCLUDED_INTEGRATIONS, DEFAULT_EXCLUDED_INTEGRATIONS)
+    )
+    coordinator.excluded_domains = list(
+        entry.options.get(CONF_EXCLUDED_DOMAINS, DEFAULT_EXCLUDED_DOMAINS)
     )
     await coordinator.async_refresh()
 
